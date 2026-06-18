@@ -42,6 +42,7 @@ const COMMON_ASSETS: Record<string, Omit<ResolvedAsset, 'symbol' | 'sourceId'> &
   TIA: crypto('Celestia'),
   ARB: crypto('Arbitrum'),
   OP: crypto('Optimism'),
+  NDX: { ...crypto('Nasdaq 100 proxy'), sourceId: 'XYZ100' },
   AAPL: equity('Apple Inc.'),
   MSFT: equity('Microsoft Corporation'),
   NVDA: equity('NVIDIA Corporation'),
@@ -83,6 +84,7 @@ const COMMON_ASSETS: Record<string, Omit<ResolvedAsset, 'symbol' | 'sourceId'> &
   JPM: equity('JPMorgan Chase & Co.'),
   BAC: equity('Bank of America Corporation'),
   SPY: equity('SPDR S&P 500 ETF Trust'),
+  SPX: equity('S&P 500 proxy', 'SPY'),
   QQQ: equity('Invesco QQQ Trust'),
 }
 
@@ -224,7 +226,7 @@ async function resolveWithLlm(items: { raw: string; candidates: AssetCandidate[]
 
   try {
     const apiKey = requiredEnv('OPENAI_API_KEY')
-    const model = optionalEnv('OPENAI_MODEL') ?? 'gpt-5.4-nano'
+    const model = optionalEnv('OPENAI_MODEL') ?? 'gpt-5.4'
     const payload = items.map((item) => ({
       cashtag: `$${item.raw}`,
       tweets: item.context?.tweets.slice(0, 3) ?? [],

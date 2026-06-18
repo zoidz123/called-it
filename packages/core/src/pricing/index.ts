@@ -7,6 +7,13 @@ export async function getEntryAndCurrentPrices(asset: ResolvedAsset, date: strin
       ? await hyperliquidPerpPrices(cleanSymbol(asset.sourceId), date)
       : await yahooPrices(asset.sourceId, date)
   } catch (error) {
+    if (cleanSymbol(asset.sourceId) === 'XYZ100') {
+      try {
+        return await yahooPrices('QQQ', date)
+      } catch {
+        // Fall through to the normal debug log and null return.
+      }
+    }
     if (optionalEnv('DEBUG_PRICING') === '1') {
       console.warn('pricing failed', asset.symbol, asset.sourceId, asset.provider, error)
     }
