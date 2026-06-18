@@ -1,0 +1,11 @@
+{
+  "name": "@called-it/core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./env": "./src/env.ts",
+    "./types": "./src/types.ts"
+  }
+}

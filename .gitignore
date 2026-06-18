@@ -1,0 +1,7 @@
+node_modules/
+.env
+.recipient-key
+*.log
+.DS_Store
+.cache/
+apps/web/.next/

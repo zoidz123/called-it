@@ -1,0 +1,10 @@
+{
+  "name": "@called-it/web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@called-it/core": "workspace:*",
+    "@called-it/db": "workspace:*"
+  }
+}
