@@ -42,7 +42,7 @@ export function TweetFeed({ tweets, tickerSearch }: { tweets: FeedTweet[], ticke
       if (!q) return true
       const tickerQuery = normalizeMaybeTicker(q)
       if (tickerQuery) {
-        return tweet.stances.some((stance) => normalizeTicker(stance.asset) === tickerQuery) || hasCashtag(tweet.text, tickerQuery)
+        return tweet.stances.some((stance) => normalizeTicker(stance.asset) === tickerQuery)
       }
       const haystack = `${tweet.text} ${tweet.stances.map((stance) => normalizeTicker(stance.asset)).join(' ')}`.toLowerCase()
       return haystack.includes(q)
@@ -159,15 +159,6 @@ function normalizeMaybeTicker(value: string) {
   const raw = value.replace(/^\$+/, '').trim()
   if (!/^[a-z0-9]{2,12}$/i.test(raw)) return null
   return `$${raw.toUpperCase()}`
-}
-
-function hasCashtag(text: string, ticker: string) {
-  const raw = ticker.replace(/^\$+/, '')
-  return new RegExp(`\\$${escapeRegExp(raw)}\\b`, 'i').test(text)
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function formatDateTime(value: string) {

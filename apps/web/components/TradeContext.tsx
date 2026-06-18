@@ -14,7 +14,7 @@ export function TradeContext({ handle, tickerSearch }: { handle: string, tickerS
 
   useEffect(() => {
     let alive = true
-    fetch(`${API_URL}/api/users/${encodeURIComponent(handle)}`)
+    fetch(`${API_URL}/api/users/${encodeURIComponent(handle)}`, { cache: 'no-store' })
       .then((res) => {
         if (!res.ok) throw new Error('Could not load trade context.')
         return res.json() as Promise<ScorecardTweets>

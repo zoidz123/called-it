@@ -84,7 +84,11 @@ export async function classifyCandidates(
   return selected.map((candidate) => ({
     ...candidate,
     stances: (classified.get(candidate.id) ?? [])
-      .filter((stance) => candidate.assets.includes(normalizeAsset(stance.asset)) && (stance.stance === 'bull' || stance.stance === 'bear'))
+      .filter((stance) => (
+        candidate.assets.includes(normalizeAsset(stance.asset)) &&
+        (stance.stance === 'bull' || stance.stance === 'bear') &&
+        stance.conviction >= 0.7
+      ))
       .map((stance) => ({
         asset: normalizeAsset(stance.asset),
         direction: stance.stance === 'bull' ? 'BULL' as const : 'BEAR' as const,
