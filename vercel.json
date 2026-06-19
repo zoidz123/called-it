@@ -4,5 +4,11 @@
   "installCommand": "bun install --frozen-lockfile",
   "buildCommand": "bun run build:web",
   "devCommand": "bunx next dev apps/web -p ${PORT:-3002}",
-  "outputDirectory": "apps/web/.next"
+  "outputDirectory": "apps/web/.next",
+  "experimentalServices": {
+    "web": {
+      "routePrefix": "/",
+      "framework": "nextjs"
+    }
+  }
 }
