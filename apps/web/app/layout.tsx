@@ -6,7 +6,7 @@ const description = 'Find the traders who spotted the move early.'
 const ogImage = '/og-image.png'
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://called-it-nu.vercel.app'),
+  metadataBase: new URL('https://www.calledit.site'),
   title: 'Called It',
   applicationName: 'Called It',
   description,
