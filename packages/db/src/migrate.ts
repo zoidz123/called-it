@@ -103,6 +103,18 @@ const statements = [
     calls_up INTEGER NOT NULL DEFAULT 0,
     computed_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
+  `CREATE TABLE IF NOT EXISTS asset_feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    handle TEXT NOT NULL REFERENCES users(handle) ON DELETE CASCADE,
+    asset TEXT NOT NULL,
+    displayed_direction TEXT CHECK (displayed_direction IN ('BULL','BEAR')),
+    displayed_action TEXT CHECK (displayed_action IN ('BUY','SELL')),
+    suggested_correction TEXT NOT NULL,
+    row_context JSONB,
+    user_agent TEXT,
+    status TEXT NOT NULL DEFAULT 'new',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS one_active_scan_per_handle
     ON scan_jobs (lower(handle))
     WHERE status IN ('pending','running')`,
@@ -110,6 +122,8 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS idx_users_stats_rank ON user_stats(avg_return DESC, hit_rate DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_calls_handle_return ON calls(handle, return_pct DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_call_tweets_handle_asset ON call_tweets(handle, asset)`,
+  `CREATE INDEX IF NOT EXISTS idx_asset_feedback_created ON asset_feedback(created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_asset_feedback_handle_asset ON asset_feedback(lower(handle), asset)`,
 ]
 
 export async function migrate() {

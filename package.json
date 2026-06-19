@@ -11,6 +11,9 @@
   "scripts": {
     "api": "bun run apps/api/src/server.ts",
     "web": "bunx next dev apps/web -p ${WEB_PORT:-3002}",
+    "build:web": "bunx next build apps/web",
+    "start:web": "bunx next start apps/web -p ${WEB_PORT:-3002}",
+    "start:api": "bun run apps/api/src/server.ts",
     "db:migrate": "bun run packages/db/src/migrate.ts",
     "typecheck": "bunx tsc --noEmit"
   },

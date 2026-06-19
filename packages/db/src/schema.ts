@@ -1,4 +1,4 @@
-import { boolean, doublePrecision, integer, jsonb, numeric, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { boolean, check, doublePrecision, foreignKey, integer, jsonb, numeric, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 export const users = pgTable('users', {
@@ -84,3 +84,22 @@ export const userStats = pgTable('user_stats', {
   computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+export const assetFeedback = pgTable('asset_feedback', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  handle: text('handle').notNull(),
+  asset: text('asset').notNull(),
+  displayedDirection: text('displayed_direction'),
+  displayedAction: text('displayed_action'),
+  suggestedCorrection: text('suggested_correction').notNull(),
+  rowContext: jsonb('row_context'),
+  userAgent: text('user_agent'),
+  status: text('status').notNull().default('new'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  foreignKey({
+    columns: [table.handle],
+    foreignColumns: [users.handle],
+  }).onDelete('cascade'),
+  check('asset_feedback_displayed_direction_check', sql`${table.displayedDirection} IN ('BULL','BEAR')`),
+  check('asset_feedback_displayed_action_check', sql`${table.displayedAction} IN ('BUY','SELL')`),
+])

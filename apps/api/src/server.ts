@@ -1,8 +1,10 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
+import { createHash } from 'node:crypto'
 import { Mppx, tempo } from 'mppx/server'
 import { migrate } from '@called-it/db/migrate'
 import {
+  createAssetFeedback,
   createOrReuseScanJob,
   getLeaderboard,
   getScanJob,
@@ -13,12 +15,16 @@ import { startWorkerLoop } from './worker'
 
 loadLocalEnv()
 
-const PORT = Number(process.env.API_PORT ?? 3001)
+const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001)
 const PRICE = process.env.SCAN_PRICE ?? '2.00'
 const ALLOW_DEV_PAID_SCAN = process.env.ALLOW_DEV_PAID_SCAN === 'true'
+const FEEDBACK_MAX_PER_HOUR = clampNumber(process.env.FEEDBACK_MAX_PER_HOUR, 20, 1, 100)
+const FEEDBACK_RATE_WINDOW_MS = 60 * 60 * 1000
+const FEEDBACK_DUPLICATE_WINDOW_MS = 10 * 60 * 1000
 const USDCE_MAINNET = '0x20c000000000000000000000b9537d11c60e8b50'
 const RECIPIENT = process.env.RECIPIENT as `0x${string}` | undefined
 const SECRET_KEY = process.env.MPP_SECRET_KEY
+const feedbackBuckets = new Map<string, { count: number; resetAt: number; fingerprints: Map<string, number> }>()
 
 const mppx = RECIPIENT && SECRET_KEY ? Mppx.create({
   secretKey: SECRET_KEY,
@@ -52,6 +58,41 @@ export async function buildServer() {
     })
     if (!scorecard) return reply.code(404).send({ error: 'Scorecard not found' })
     return scorecard
+  })
+
+  app.post('/api/users/:handle/asset-feedback', async (request: any, reply) => {
+    const handle = parseXHandle(request.params.handle)
+    const body = request.body ?? {}
+    const asset = normalizeAsset(body.asset)
+    const suggestedCorrection = normalizeFeedbackText(body.suggestedCorrection)
+    const displayedDirection = normalizeDirection(body.displayedDirection)
+    const displayedAction = displayedDirection ? directionToAction(displayedDirection) : normalizeAction(body.displayedAction)
+
+    if (!asset) return reply.code(400).send({ error: 'Asset is required.' })
+    if (!suggestedCorrection) return reply.code(400).send({ error: 'Tell us what this should be.' })
+
+    const scorecard = await getUserScorecard(handle, { includeTweets: false })
+    if (!scorecard) return reply.code(404).send({ error: 'Scorecard not found.' })
+    if (!scorecardHasAsset(scorecard, asset)) return reply.code(404).send({ error: 'Asset row not found.' })
+
+    const feedbackGate = checkFeedbackGate(request, handle, asset, suggestedCorrection)
+    if (!feedbackGate.ok) return reply.code(feedbackGate.status).send(feedbackGate.body)
+
+    try {
+      const feedback = await createAssetFeedback({
+        handle,
+        asset,
+        displayedDirection,
+        displayedAction,
+        suggestedCorrection,
+        rowContext: sanitizeRowContext(body.rowContext),
+        userAgent: normalizeOptionalText(request.headers['user-agent'], 300),
+      })
+      return reply.code(201).send({ ok: true, feedback })
+    } catch (error: any) {
+      if (error?.code === '23503') return reply.code(404).send({ error: 'Scorecard not found.' })
+      throw error
+    }
   })
 
   app.get('/api/jobs/:id', async (request: any, reply) => {
@@ -116,6 +157,115 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.min(max, Math.floor(parsed)))
+}
+
+function normalizeAsset(value: unknown) {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().replace(/^\$+/, '').toUpperCase()
+  if (!/^[A-Z0-9._-]{1,32}$/.test(normalized)) return null
+  return `$${normalized}`
+}
+
+function scorecardHasAsset(scorecard: any, asset: string) {
+  const assets = [
+    ...(Array.isArray(scorecard.calls) ? scorecard.calls.map((call: any) => call.asset) : []),
+    ...(Array.isArray(scorecard.assets) ? scorecard.assets.map((row: any) => row.asset) : []),
+  ]
+  return assets.some((value) => normalizeAsset(value) === asset)
+}
+
+function normalizeFeedbackText(value: unknown) {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  if (normalized.length < 3) return null
+  return normalized.slice(0, 1000)
+}
+
+function normalizeDirection(value: unknown): 'BULL' | 'BEAR' | null {
+  return value === 'BULL' || value === 'BEAR' ? value : null
+}
+
+function normalizeAction(value: unknown): 'BUY' | 'SELL' | null {
+  return value === 'BUY' || value === 'SELL' ? value : null
+}
+
+function directionToAction(direction: 'BULL' | 'BEAR') {
+  return direction === 'BEAR' ? 'SELL' : 'BUY'
+}
+
+function checkFeedbackGate(request: any, handle: string, asset: string, suggestedCorrection: string) {
+  const now = Date.now()
+  const clientKey = hashValue(`${readClientIp(request)}|${normalizeOptionalText(request.headers['user-agent'], 120) ?? ''}`)
+  let bucket = feedbackBuckets.get(clientKey)
+
+  if (!bucket || bucket.resetAt <= now) {
+    bucket = { count: 0, resetAt: now + FEEDBACK_RATE_WINDOW_MS, fingerprints: new Map() }
+    feedbackBuckets.set(clientKey, bucket)
+  }
+
+  for (const [fingerprint, expiresAt] of bucket.fingerprints) {
+    if (expiresAt <= now) bucket.fingerprints.delete(fingerprint)
+  }
+
+  const feedbackFingerprint = hashValue(`${handle.toLowerCase()}|${asset}|${suggestedCorrection.toLowerCase()}`)
+  const duplicateUntil = bucket.fingerprints.get(feedbackFingerprint)
+  if (duplicateUntil && duplicateUntil > now) {
+    return {
+      ok: false,
+      status: 202,
+      body: { ok: true, duplicate: true, message: 'Flag already received. Thanks.' },
+    }
+  }
+
+  if (bucket.count >= FEEDBACK_MAX_PER_HOUR) {
+    return {
+      ok: false,
+      status: 429,
+      body: { error: 'Too many flags from this browser. Try again later.' },
+    }
+  }
+
+  bucket.count += 1
+  bucket.fingerprints.set(feedbackFingerprint, now + FEEDBACK_DUPLICATE_WINDOW_MS)
+  pruneFeedbackBuckets(now)
+  return { ok: true as const }
+}
+
+function readClientIp(request: any) {
+  const forwarded = request.headers['x-forwarded-for']
+  if (typeof forwarded === 'string' && forwarded.trim()) return forwarded.split(',')[0].trim()
+  if (Array.isArray(forwarded) && forwarded[0]) return String(forwarded[0]).split(',')[0].trim()
+  return request.ip ?? request.socket?.remoteAddress ?? 'unknown'
+}
+
+function hashValue(value: string) {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function pruneFeedbackBuckets(now: number) {
+  if (feedbackBuckets.size < 1000) return
+  for (const [key, bucket] of feedbackBuckets) {
+    if (bucket.resetAt <= now) feedbackBuckets.delete(key)
+  }
+}
+
+function sanitizeRowContext(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const input = value as Record<string, unknown>
+  return {
+    displayedAction: normalizeAction(input.displayedAction),
+    displayedDirection: normalizeDirection(input.displayedDirection),
+    mentions: clampNumber(input.mentions, 0, 0, 1_000_000),
+    firstPitchAt: normalizeOptionalText(input.firstPitchAt, 80),
+    returnPct: typeof input.returnPct === 'number' && Number.isFinite(input.returnPct) ? input.returnPct : null,
+    stanceLabel: normalizeOptionalText(input.stanceLabel, 120),
+  }
+}
+
+function normalizeOptionalText(value: unknown, maxLength: number) {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  return normalized ? normalized.slice(0, maxLength) : null
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

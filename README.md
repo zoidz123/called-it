@@ -23,6 +23,36 @@ bun run web
 bun run typecheck
 ```
 
+## Deployment
+
+### Backend: Railway
+
+Railway should deploy from the repo root. `railway.json` uses Nixpacks, starts the API with `bun run api`, and checks `/health`.
+
+Set production env vars in Railway, including:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Neon/Postgres connection string. |
+| `OPENAI_API_KEY` | Classification and ticker-resolution calls. |
+| `TWITTERAPI_IO_API_KEYS` | Comma-separated TwitterAPI.io key pool. |
+| `FMP_API_KEY` | Stock price data. |
+| `RECIPIENT` | MPP payment recipient address. |
+| `MPP_SECRET_KEY` | MPP server secret key. |
+| `SCAN_PRICE` | Scan price, for example `2.00`. |
+
+Do not set `ALLOW_DEV_PAID_SCAN` in production. Railway supplies `PORT`; the API also honors `API_PORT` for local overrides.
+
+### Frontend: Vercel
+
+Vercel should deploy from the repo root. `vercel.json` installs with Bun and builds the web app with `bun run build:web`.
+
+Set:
+
+| Variable | Purpose |
+| --- | --- |
+| `NEXT_PUBLIC_API_URL` | Public Railway API URL, for example `https://<service>.up.railway.app`. |
+
 ## Environment
 
 Use `.env` for local secrets and provider keys. The app expects keys for the real scan stack, including X/Twitter data, OpenAI classification, price providers, Neon, and the MPP recipient/payment settings.

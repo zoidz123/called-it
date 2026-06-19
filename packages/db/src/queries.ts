@@ -50,6 +50,41 @@ export async function getScanJob(id: string) {
   return rows[0] ? serializeRow(rows[0]) : null
 }
 
+export async function createAssetFeedback({
+  handle,
+  asset,
+  displayedDirection,
+  displayedAction,
+  suggestedCorrection,
+  rowContext,
+  userAgent,
+}: {
+  handle: string
+  asset: string
+  displayedDirection?: 'BULL' | 'BEAR' | null
+  displayedAction?: 'BUY' | 'SELL' | null
+  suggestedCorrection: string
+  rowContext?: Record<string, unknown> | null
+  userAgent?: string | null
+}) {
+  const { rows } = await query(
+    `INSERT INTO asset_feedback (
+      handle, asset, displayed_direction, displayed_action, suggested_correction, row_context, user_agent
+    ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)
+    RETURNING id, handle, asset, displayed_direction, displayed_action, suggested_correction, status, created_at`,
+    [
+      handle.toLowerCase(),
+      asset,
+      displayedDirection ?? null,
+      displayedAction ?? null,
+      suggestedCorrection,
+      rowContext ? JSON.stringify(rowContext) : null,
+      userAgent ?? null,
+    ],
+  )
+  return serializeRow(rows[0])
+}
+
 export async function updateScanJob(id: string, fields: Record<string, any>) {
   const allowed = ['stage', 'progress', 'progress_message', 'tweets_scanned', 'candidates', 'classified', 'calls_found', 'priced_calls']
   const entries = Object.entries(fields).filter(([key]) => allowed.includes(key))

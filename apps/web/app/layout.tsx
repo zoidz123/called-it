@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   title: 'Called It',
   applicationName: 'Called It',
   description,
+  icons: {
+    icon: '/icon.svg',
+  },
   openGraph: {
     title: 'Called It',
     description,
@@ -26,6 +29,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <body>
         {children}
+        <footer className="site-footer">
+          Built by <a href="https://x.com/Mysterious35725" target="_blank" rel="noreferrer">Mysterious35725</a>
+        </footer>
       </body>
     </html>
   )
