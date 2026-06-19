@@ -6,7 +6,7 @@ import { formatNumber, formatPct } from '../../../lib/format'
 import { buildAssetRows, formatDate, topShareRows, type Scorecard, type ShareCallRow } from '../../../lib/scorecard'
 
 const SITE_URL = 'https://www.calledit.site'
-const SHARE_IMAGE_VERSION = '1'
+export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }): Promise<Metadata> {
   const { handle } = await params
@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: { params: Promise<{ handle: s
   const description = scorecard
     ? `${formatPct(scorecard.user.avg_return ?? 0)} avg move, ${Math.round((scorecard.user.hit_rate ?? 0) * 100)}% hit rate across public ticker calls.`
     : 'Find the traders who spotted the move early.'
-  const image = `/u/${encodeURIComponent(displayHandle)}/opengraph-image?v=${SHARE_IMAGE_VERSION}`
+  const image = `/u/${encodeURIComponent(displayHandle)}/opengraph-image?v=${shareImageVersion(scorecard)}`
 
   return {
     title,
@@ -54,34 +54,6 @@ export default async function Profile({ params }: { params: Promise<{ handle: st
         </div>
       </header>
 
-      <section className="calls-profile">
-        <div className="calls-person">
-          <Avatar src={user.avatar_url} name={user.name} />
-          <div>
-            <h1>{user.name} <span>@{user.handle}</span></h1>
-            <p>{formatNumber(user.followers)} followers{user.bio ? ` · ${user.bio}` : ''}</p>
-          </div>
-        </div>
-        <dl className="calls-stats">
-          <div>
-            <dt>Avg Move</dt>
-            <dd className={user.avg_return >= 0 ? 'good' : 'bad'}>{formatPct(user.avg_return ?? 0)}</dd>
-          </div>
-          <div>
-            <dt>Median Move</dt>
-            <dd className={user.median_return >= 0 ? 'good' : 'bad'}>{formatPct(user.median_return ?? 0)}</dd>
-          </div>
-          <div>
-            <dt>Hit Rate</dt>
-            <dd>{Math.round((user.hit_rate ?? 0) * 100)}%</dd>
-          </div>
-          <div>
-            <dt>Hits</dt>
-            <dd>{user.calls_up}/{user.calls_total}</dd>
-          </div>
-        </dl>
-      </section>
-
       <ShareImageCard data={data} rows={shareRows} />
 
       <ProfileTradeContext
@@ -103,7 +75,7 @@ async function loadScorecard(handle: string) {
 function ShareImageCard({ data, rows }: { data: Scorecard; rows: ShareCallRow[] }) {
   const { user } = data
   const profileUrl = `${SITE_URL}/u/${encodeURIComponent(user.handle)}`
-  const imageUrl = `/u/${encodeURIComponent(user.handle)}/opengraph-image?v=${SHARE_IMAGE_VERSION}`
+  const imageUrl = `/u/${encodeURIComponent(user.handle)}/opengraph-image?v=${shareImageVersion(data)}`
   const shareText = [
     `${user.name}'s Called It scorecard`,
     `${formatPct(user.avg_return ?? 0)} avg move · ${Math.round((user.hit_rate ?? 0) * 100)}% hit rate`,
@@ -165,4 +137,17 @@ function ShareStat({ label, value, tone }: { label: string; value: string; tone?
       <b className={tone}>{value}</b>
     </div>
   )
+}
+
+function shareImageVersion(data: Scorecard | null) {
+  if (!data) return 'pending'
+  const { user } = data
+  const stamp = user.computed_at ?? data.scan?.finished_at ?? 'pending'
+  return encodeURIComponent([
+    stamp,
+    user.calls_up ?? 0,
+    user.calls_total ?? 0,
+    Math.round((user.avg_return ?? 0) * 10000),
+    Math.round((user.median_return ?? 0) * 10000),
+  ].join(':'))
 }

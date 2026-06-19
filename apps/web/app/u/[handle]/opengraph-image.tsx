@@ -4,6 +4,7 @@ import { formatNumber, formatPct } from '../../../lib/format'
 import { buildAssetRows, formatDate, topShareRows, type Scorecard, type ShareCallRow } from '../../../lib/scorecard'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 export const alt = 'Called It scorecard share card'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
@@ -32,7 +33,7 @@ export default async function Image({ params }: { params: Promise<{ handle: stri
   return new ImageResponse(<ShareCard data={data} rows={rows} avatar={avatar} />, {
     ...size,
     headers: {
-      'cache-control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600',
+      'cache-control': 'public, max-age=30, s-maxage=60, stale-while-revalidate=300',
     },
   })
 }

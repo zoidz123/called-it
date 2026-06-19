@@ -29,11 +29,6 @@ export function ProfileTradeContext({ assetRows, handle, updatedLabel }: Profile
     .sort((a, b) => rowImpact(b) - rowImpact(a))
   const visibleRows = sortedRows.slice(0, visibleRowCount)
   const hiddenRowCount = Math.max(0, sortedRows.length - visibleRows.length)
-  const featuredRows = assetRows
-    .slice()
-    .filter((row) => row.legs.length && rowMove(row) > 0)
-    .sort((a, b) => rowMove(b) - rowMove(a) || b.total - a.total)
-    .slice(0, 4)
 
   function searchTicker(ticker: string) {
     setTickerSearch({ ticker, id: Date.now() })
@@ -112,25 +107,6 @@ export function ProfileTradeContext({ assetRows, handle, updatedLabel }: Profile
             <p className="scoreboard-note">This tracks public ticker mentions and the price move after each call. It is not a portfolio return estimate and should not be used to judge actual PnL, position sizing, entries, exits, or holding periods.</p>
           </div>
         </div>
-          {featuredRows.length ? (
-          <div className="move-spotlight" aria-label="Top positive post-mention outcomes">
-            {featuredRows.map((row) => (
-              <button
-                type="button"
-                key={row.id}
-                onClick={() => searchTicker(row.asset)}
-                className="spotlight-tile"
-              >
-                <span className="spotlight-call">
-                  <span className={`spotlight-action ${rowDirection(row) === 'BEAR' ? 'bear' : 'bull'}`}>{rowAction(row)}</span>
-                  <span className="spotlight-ticker">{row.asset}</span>
-                </span>
-                <b className={rowMove(row) >= 0 ? 'good' : 'bad'}>{formatPct(rowMove(row))}</b>
-                <small>{row.total} mentions since {formatDate(row.firstPitchAt)}</small>
-              </button>
-            ))}
-          </div>
-        ) : null}
         <div className="move-board">
           <div role="table" aria-label="Scorecard">
             <div className="move-board-head" role="row">
