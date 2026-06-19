@@ -2,9 +2,11 @@ import './globals.css'
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 
-const description = 'Find traders who called public ticker moves early.'
+const description = 'Find the traders who spotted the move early.'
+const ogImage = '/og-image.png'
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://called-it-nu.vercel.app'),
   title: 'Called It',
   applicationName: 'Called It',
   description,
@@ -16,11 +18,20 @@ export const metadata: Metadata = {
     description,
     siteName: 'Called It',
     type: 'website',
+    images: [
+      {
+        url: ogImage,
+        width: 1200,
+        height: 630,
+        alt: 'Called It - Find the traders who spotted the move early.',
+      },
+    ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'Called It',
     description,
+    images: [ogImage],
   },
 }
 
