@@ -1,7 +1,6 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { createHash } from 'node:crypto'
-import { Mppx, tempo } from 'mppx/server'
 import { migrate } from '@called-it/db/migrate'
 import {
   createAssetFeedback,
@@ -16,20 +15,10 @@ import { startWorkerLoop } from './worker'
 loadLocalEnv()
 
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001)
-const PRICE = process.env.SCAN_PRICE ?? '2.00'
-const ALLOW_DEV_PAID_SCAN = process.env.ALLOW_DEV_PAID_SCAN === 'true'
 const FEEDBACK_MAX_PER_HOUR = clampNumber(process.env.FEEDBACK_MAX_PER_HOUR, 20, 1, 100)
 const FEEDBACK_RATE_WINDOW_MS = 60 * 60 * 1000
 const FEEDBACK_DUPLICATE_WINDOW_MS = 10 * 60 * 1000
-const USDCE_MAINNET = '0x20c000000000000000000000b9537d11c60e8b50'
-const RECIPIENT = process.env.RECIPIENT as `0x${string}` | undefined
-const SECRET_KEY = process.env.MPP_SECRET_KEY
 const feedbackBuckets = new Map<string, { count: number; resetAt: number; fingerprints: Map<string, number> }>()
-
-const mppx = RECIPIENT && SECRET_KEY ? Mppx.create({
-  secretKey: SECRET_KEY,
-  methods: [tempo.charge({ currency: USDCE_MAINNET, recipient: RECIPIENT })],
-}) : null
 
 export async function buildServer() {
   await migrate()
@@ -117,40 +106,11 @@ export async function buildServer() {
 
   app.post('/api/scan/:handle', async (request: any, reply) => {
     const handle = parseXHandle(request.params.handle)
-    const isDevPaid = ALLOW_DEV_PAID_SCAN && (request.headers['x-dev-paid'] === 'true' || request.query?.dev === '1')
-    if (!isDevPaid) {
-      if (!mppx) return reply.code(500).send({ error: 'MPP is not configured.' })
-      const webRequest = fastifyToRequest(request)
-      const result = await mppx.charge({ amount: PRICE, description: `Called It scan for @${handle}` })(webRequest)
-      if (result.status === 402) return sendWebResponse(reply, result.challenge)
-      const job = await createOrReuseScanJob({ handle, paidTx: 'mpp-verified', amountUsd: Number(PRICE) })
-      return sendWebResponse(reply, result.withReceipt(Response.json({ jobId: job.id, handle, status: job.status })))
-    }
-    const job = await createOrReuseScanJob({ handle, paidTx: 'dev-paid', amountUsd: Number(PRICE) })
+    const job = await createOrReuseScanJob({ handle })
     return { jobId: job.id, handle, status: job.status }
   })
 
   return app
-}
-
-function fastifyToRequest(request: any) {
-  const proto = request.headers['x-forwarded-proto'] ?? 'http'
-  const host = request.headers.host ?? `localhost:${PORT}`
-  const url = `${proto}://${host}${request.raw.url}`
-  const headers = new Headers()
-  for (const [key, value] of Object.entries(request.headers)) {
-    if (Array.isArray(value)) headers.set(key, value.join(', '))
-    else if (value != null) headers.set(key, String(value))
-  }
-  return new Request(url, { method: request.method, headers })
-}
-
-async function sendWebResponse(reply: any, response: Response) {
-  reply.code(response.status)
-  response.headers.forEach((value, key) => reply.header(key, value))
-  const contentType = response.headers.get('content-type') ?? ''
-  if (contentType.includes('application/json')) return reply.send(await response.json())
-  return reply.send(await response.text())
 }
 
 function clampNumber(value: unknown, fallback: number, min: number, max: number) {

@@ -3,11 +3,6 @@
 import { FormEvent, useState } from 'react'
 import { API_URL } from '../lib/api'
 
-const IS_LOCAL_API = API_URL.startsWith('http://localhost') || API_URL.startsWith('http://127.0.0.1')
-const DEV_PAID_SCAN = process.env.NEXT_PUBLIC_ALLOW_DEV_PAID_SCAN === 'true'
-  || (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ALLOW_DEV_PAID_SCAN !== 'false')
-  || (process.env.NODE_ENV !== 'production' && IS_LOCAL_API)
-
 type Job = {
   id: string
   status: string
@@ -55,17 +50,15 @@ export function ScanBox({
         return
       } else {
         if (!pre.ok) throw new Error(pre.message || 'This account is not ready to scan.')
-        setScanMessage(DEV_PAID_SCAN ? 'Starting scan...' : 'Starting the paid scan...')
+        setScanMessage('Starting scan...')
       }
       setScanProgress(5)
       setModalOpen(true)
-      const scanUrl = `${API_URL}/api/scan/${encodeURIComponent(clean)}${DEV_PAID_SCAN ? '?dev=1' : ''}`
-      const created = await fetch(scanUrl, {
+      const created = await fetch(`${API_URL}/api/scan/${encodeURIComponent(clean)}`, {
         method: 'POST',
-        headers: DEV_PAID_SCAN ? { 'x-dev-paid': 'true' } : undefined,
       }).then(async (res) => {
         const payload = await res.json().catch(() => null)
-        if (!res.ok) throw new Error(payload?.error || 'Payment is required to start a fresh scan.')
+        if (!res.ok) throw new Error(payload?.error || 'Could not start scan.')
         return payload
       })
       await poll(created.jobId)

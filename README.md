@@ -1,13 +1,13 @@
 # Called It
 
-Paid X trader scans with MPP, async jobs, price-backed call scoring, and public scorecards. Local testing is currently configured for a one-year scan window via `TWITTER_LOOKBACK_DAYS=365`.
+Free X/Twitter trader scans with async jobs, price-backed call scoring, public scorecards, and a leaderboard. Local testing is currently configured for a one-year scan window via `TWITTER_LOOKBACK_DAYS=365`.
 
 ## Structure
 
 | Path | Purpose |
 | --- | --- |
-| `apps/api` | Fastify API, MPP payment gate, scan routes, worker entrypoint. |
-| `apps/web` | Next.js app for leaderboard, paid scan flow, and profile scorecards. |
+| `apps/api` | Fastify API, scan routes, feedback endpoint, and worker entrypoint. |
+| `apps/web` | Next.js app for leaderboard, free scan flow, and profile scorecards. |
 | `packages/core` | Shared tweet scanning, classification, asset resolution, pricing, and scoring logic. |
 | `packages/db` | Drizzle schema, Neon client, migrations, and DB queries. |
 
@@ -36,35 +36,30 @@ Set production env vars in Railway, including:
 | `DATABASE_URL` | Neon/Postgres connection string. |
 | `OPENAI_API_KEY` | Classification and ticker-resolution calls. |
 | `TWITTERAPI_IO_API_KEYS` | Comma-separated TwitterAPI.io key pool. |
-| `FMP_API_KEY` | Stock price data. |
-| `RECIPIENT` | MPP payment recipient address. |
-| `MPP_SECRET_KEY` | MPP server secret key. |
-| `SCAN_PRICE` | Scan price, for example `2.00`. |
+| `NIXPACKS_NODE_VERSION=22` | Forces Railway's Nixpacks builder off the Node 18 default. |
 
-Do not set `ALLOW_DEV_PAID_SCAN` in production. Railway supplies `PORT`; the API also honors `API_PORT` for local overrides.
+Railway supplies `PORT`; the API also honors `API_PORT` for local overrides.
 
 ### Frontend: Vercel
 
 Vercel should deploy from the repo root. `vercel.json` installs with Bun and builds the web app with `bun run build:web`.
 
-Set:
+Optional:
 
 | Variable | Purpose |
 | --- | --- |
-| `NEXT_PUBLIC_API_URL` | Public Railway API URL, for example `https://<service>.up.railway.app`. |
+| `NEXT_PUBLIC_API_URL` | Public Railway API URL override. Production defaults to `https://called-it-api-production.up.railway.app`. |
 
 ## Environment
 
-Use `.env` for local secrets and provider keys. The app expects keys for the real scan stack, including X/Twitter data, OpenAI classification, price providers, Neon, and the MPP recipient/payment settings.
+Use `.env` for local secrets and provider keys. The app expects keys for the real scan stack, including X/Twitter data, OpenAI classification, and Neon/Postgres.
 
 Important production knobs:
 
 | Variable | Purpose |
 | --- | --- |
-| `SCAN_PRICE=2.00` | Amount charged for each fresh scan request. Cached public scorecards stay free to view. |
 | `TWITTERAPI_IO_API_KEYS` | Comma-separated TwitterAPI.io key pool. The fetcher rotates across these keys. |
 | `TWITTERAPI_IO_MIN_INTERVAL_MS` | Minimum delay per TwitterAPI.io key. Defaults to the Proof of Hype-style `50`ms cadence. |
 | `TWITTERAPI_IO_FETCH_CONCURRENCY` | Timeline window fanout. Defaults to `max(50, keyCount * 25)`, so the five-key pool runs `125` window workers. |
 | `TWITTERAPI_IO_DENSE_PROBE_PAGES` | Pages to probe before splitting dense tweet windows. Defaults to `4`. |
 | `OPENAI_MODEL=gpt-5.4` | Classification and ambiguous ticker-resolution model. |
-| `ALLOW_DEV_PAID_SCAN=true` | Local-only escape hatch for `x-dev-paid` / `?dev=1`. Leave unset in production. |

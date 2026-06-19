@@ -1,16 +1,16 @@
 import type { ClassifiedTweet, ScoredCall, UserStats, XUser } from '@called-it/core/types'
 import { query, serializeRow, withTransaction } from './client'
 
-export async function createOrReuseScanJob({ handle, paidTx, amountUsd }: { handle: string; paidTx?: string; amountUsd?: number }) {
+export async function createOrReuseScanJob({ handle }: { handle: string }) {
   const normalized = handle.toLowerCase()
   const existing = await findActiveScanJob(normalized)
   if (existing) return existing
   try {
     const { rows } = await query(
-      `INSERT INTO scan_jobs (handle, status, stage, progress, progress_message, paid_tx, amount_usd)
-       VALUES ($1, 'pending', 'paid', 5, 'Queued scan', $2, $3)
+      `INSERT INTO scan_jobs (handle, status, stage, progress, progress_message)
+       VALUES ($1, 'pending', 'queued', 5, 'Queued scan')
        RETURNING *`,
-      [normalized, paidTx ?? null, amountUsd ?? null],
+      [normalized],
     )
     return serializeRow(rows[0])
   } catch (error: any) {
