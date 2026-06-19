@@ -1,11 +1,13 @@
 import crypto from 'node:crypto'
 import { performance } from 'node:perf_hooks'
-import { candidatesFromTweets, classifyCandidates, filterIgnoredCashtags, getAuthorTimeline, getXUser, scoreCalls } from '@called-it/core'
+import { candidatesFromTweets, classifyCandidates, filterIgnoredCashtags, getAuthorTimeline, getXUser, refreshExistingCallPrices, scoreCalls } from '@called-it/core'
 import {
   claimNextScanJob,
   completeScanJob,
   failScanJob,
+  getCallsForPriceRefresh,
   persistScorecard,
+  persistPriceRefresh,
   updateScanJob,
 } from '@called-it/db'
 
@@ -39,6 +41,37 @@ async function runLoop({ controller, workerId }: { controller: { stopped: boolea
 }
 
 export async function processJob(job: any) {
+  if (job.job_type === 'price_refresh') return processPriceRefreshJob(job)
+  return processFullScanJob(job)
+}
+
+async function processPriceRefreshJob(job: any) {
+  const handle = String(job.handle).toLowerCase()
+  const latency = createScanLatencyLogger({ jobId: job.id, handle })
+  try {
+    await updateScanJob(job.id, { stage: 'pricing', progress: 20, progress_message: 'Refreshing prices' })
+    const storedCalls = await getCallsForPriceRefresh(handle)
+    const calls = await latency.measure('pricing_scoring', () => refreshExistingCallPrices(storedCalls.map(toScoredCall)))
+
+    await updateScanJob(job.id, {
+      stage: 'persisting',
+      progress: 90,
+      calls_found: storedCalls.length,
+      priced_calls: calls.length,
+      progress_message: 'Saving refreshed prices',
+    })
+    await latency.measure('persistence', () => persistPriceRefresh(handle, calls))
+
+    await completeScanJob(job.id)
+    latency.logSummary('done')
+  } catch (error) {
+    await failScanJob(job.id, error)
+    console.error('price refresh job failed', error)
+    latency.logSummary('error', error)
+  }
+}
+
+async function processFullScanJob(job: any) {
   const handle = String(job.handle).toLowerCase()
   const latency = createScanLatencyLogger({ jobId: job.id, handle })
   try {
@@ -80,6 +113,26 @@ export async function processJob(job: any) {
     await failScanJob(job.id, error)
     console.error('scan job failed', error)
     latency.logSummary('error', error)
+  }
+}
+
+function toScoredCall(row: any) {
+  return {
+    handle: row.handle,
+    asset: row.asset,
+    assetClass: row.asset_class,
+    sourceId: row.source_id,
+    direction: row.direction,
+    firstPitchAt: row.first_pitch_at,
+    firstTweetId: row.first_tweet_id,
+    entryPrice: row.entry_price,
+    currentPrice: row.current_price,
+    returnPct: row.return_pct,
+    isUp: row.is_up,
+    mentions: row.mentions,
+    bulls: row.bulls,
+    bears: row.bears,
+    pricedAt: row.priced_at,
   }
 }
 

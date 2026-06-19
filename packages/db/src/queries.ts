@@ -1,28 +1,55 @@
 import type { ClassifiedTweet, ScoredCall, UserStats, XUser } from '@called-it/core/types'
 import { query, serializeRow, withTransaction } from './client'
 
+const PRICE_REFRESH_TTL_HOURS = Number(process.env.PRICE_REFRESH_TTL_HOURS ?? 1)
+const FULL_RESCAN_TTL_HOURS = Number(process.env.FULL_RESCAN_TTL_HOURS ?? 24 * 7)
+const REFRESH_JOB_COOLDOWN_MINUTES = Number(process.env.REFRESH_JOB_COOLDOWN_MINUTES ?? 60)
+
 export async function createOrReuseScanJob({ handle }: { handle: string }) {
   const normalized = handle.toLowerCase()
-  const existing = await findActiveScanJob(normalized)
+  const existing = await findActiveScanJob(normalized, 'full_scan')
   if (existing) return existing
   try {
     const { rows } = await query(
-      `INSERT INTO scan_jobs (handle, status, stage, progress, progress_message)
-       VALUES ($1, 'pending', 'queued', 5, 'Queued scan')
+      `INSERT INTO scan_jobs (handle, job_type, status, stage, progress, progress_message)
+       VALUES ($1, 'full_scan', 'pending', 'queued', 5, 'Queued scan')
        RETURNING *`,
       [normalized],
     )
     return serializeRow(rows[0])
   } catch (error: any) {
     if (error?.code !== '23505') throw error
-    return findActiveScanJob(normalized)
+    return findActiveScanJob(normalized, 'full_scan')
   }
 }
 
-export async function findActiveScanJob(handle: string) {
+export async function createOrReusePriceRefreshJob({ handle }: { handle: string }) {
+  const normalized = handle.toLowerCase()
+  const existing = await findActiveScanJob(normalized, 'price_refresh')
+  if (existing) return existing
+  try {
+    const { rows } = await query(
+      `INSERT INTO scan_jobs (handle, job_type, status, stage, progress, progress_message)
+       VALUES ($1, 'price_refresh', 'pending', 'queued', 5, 'Queued price refresh')
+       RETURNING *`,
+      [normalized],
+    )
+    return serializeRow(rows[0])
+  } catch (error: any) {
+    if (error?.code !== '23505') throw error
+    return findActiveScanJob(normalized, 'price_refresh')
+  }
+}
+
+export async function findActiveScanJob(handle: string, jobType?: 'full_scan' | 'price_refresh') {
+  const params = jobType ? [handle, jobType] : [handle]
   const { rows } = await query(
-    `SELECT * FROM scan_jobs WHERE lower(handle) = lower($1) AND status IN ('pending','running') ORDER BY created_at ASC LIMIT 1`,
-    [handle],
+    `SELECT * FROM scan_jobs
+     WHERE lower(handle) = lower($1)
+       AND status IN ('pending','running')
+       ${jobType ? 'AND job_type = $2' : ''}
+     ORDER BY created_at ASC LIMIT 1`,
+    params,
   )
   return rows[0] ? serializeRow(rows[0]) : null
 }
@@ -37,7 +64,7 @@ export async function claimNextScanJob(workerId: string) {
       `UPDATE scan_jobs
        SET status = 'running', stage = 'fetching_profile', progress = 10,
          started_at = COALESCE(started_at, now()), locked_at = now(), locked_by = $2,
-         progress_message = 'Reading X profile'
+         progress_message = CASE WHEN job_type = 'price_refresh' THEN 'Refreshing prices' ELSE 'Reading X profile' END
        WHERE id = $1 RETURNING *`,
       [rows[0].id, workerId],
     )
@@ -48,6 +75,68 @@ export async function claimNextScanJob(workerId: string) {
 export async function getScanJob(id: string) {
   const { rows } = await query(`SELECT * FROM scan_jobs WHERE id = $1`, [id])
   return rows[0] ? serializeRow(rows[0]) : null
+}
+
+export async function maybeEnqueueStaleRefreshes(handle: string) {
+  const normalized = handle.toLowerCase()
+  const [priceState, scanState] = await Promise.all([
+    getPriceRefreshState(normalized),
+    getFullScanRefreshState(normalized),
+  ])
+  const jobs: Record<string, any> = {}
+
+  if (priceState?.stale && !(await hasRecentRefreshJob(normalized, 'price_refresh'))) {
+    jobs.priceRefresh = await createOrReusePriceRefreshJob({ handle: normalized })
+  }
+  if (scanState?.stale && !(await hasRecentRefreshJob(normalized, 'full_scan'))) {
+    jobs.fullScan = await createOrReuseScanJob({ handle: normalized })
+  }
+
+  return { price: priceState, scan: scanState, jobs }
+}
+
+async function getPriceRefreshState(handle: string) {
+  const { rows } = await query(
+    `SELECT MIN(priced_at) AS oldest_priced_at, COUNT(*)::int AS calls_total
+     FROM calls WHERE lower(handle) = lower($1)`,
+    [handle],
+  )
+  const row = serializeRow(rows[0])
+  if (!row?.oldest_priced_at || Number(row.calls_total) < 1) return null
+  const oldest = Date.parse(row.oldest_priced_at)
+  return {
+    oldestPricedAt: row.oldest_priced_at,
+    callsTotal: Number(row.calls_total),
+    stale: Number.isFinite(oldest) && Date.now() - oldest > PRICE_REFRESH_TTL_HOURS * 60 * 60 * 1000,
+    ttlHours: PRICE_REFRESH_TTL_HOURS,
+  }
+}
+
+async function getFullScanRefreshState(handle: string) {
+  const { rows } = await query(
+    `SELECT last_scanned_at FROM users WHERE lower(handle) = lower($1)`,
+    [handle],
+  )
+  const row = rows[0] ? serializeRow(rows[0]) : null
+  if (!row?.last_scanned_at) return null
+  const lastScanned = Date.parse(row.last_scanned_at)
+  return {
+    lastScannedAt: row.last_scanned_at,
+    stale: Number.isFinite(lastScanned) && Date.now() - lastScanned > FULL_RESCAN_TTL_HOURS * 60 * 60 * 1000,
+    ttlHours: FULL_RESCAN_TTL_HOURS,
+  }
+}
+
+async function hasRecentRefreshJob(handle: string, jobType: 'full_scan' | 'price_refresh') {
+  const { rows } = await query(
+    `SELECT id FROM scan_jobs
+     WHERE lower(handle) = lower($1)
+       AND job_type = $2
+       AND created_at > now() - ($3::int * interval '1 minute')
+     LIMIT 1`,
+    [handle, jobType, REFRESH_JOB_COOLDOWN_MINUTES],
+  )
+  return Boolean(rows[0])
 }
 
 export async function createAssetFeedback({
@@ -185,6 +274,59 @@ export async function persistScorecard({
         hit_rate = excluded.hit_rate, calls_total = excluded.calls_total,
         calls_up = excluded.calls_up, computed_at = now()`,
       [stats.handle, stats.avgReturn, stats.medianReturn, stats.hitRate, stats.callsTotal, stats.callsUp],
+    )
+  })
+}
+
+export async function getCallsForPriceRefresh(handle: string) {
+  const { rows } = await query(
+    `SELECT id, handle, asset, asset_class, source_id, direction, first_pitch_at, first_tweet_id,
+      entry_price, current_price, return_pct, is_up, mentions, bulls, bears, priced_at
+     FROM calls
+     WHERE lower(handle) = lower($1)
+     ORDER BY asset ASC, direction ASC`,
+    [handle],
+  )
+  return rows.map(serializeRow)
+}
+
+export async function persistPriceRefresh(handle: string, calls: ScoredCall[]) {
+  await withTransaction(async (client) => {
+    for (const call of calls) {
+      await client.query(
+        `UPDATE calls
+         SET entry_price = $4, current_price = $5, return_pct = $6, is_up = $7, priced_at = $8
+         WHERE lower(handle) = lower($1) AND asset = $2 AND direction = $3`,
+        [
+          handle,
+          call.asset,
+          call.direction,
+          call.entryPrice,
+          call.currentPrice,
+          call.returnPct,
+          call.isUp,
+          call.pricedAt,
+        ],
+      )
+    }
+
+    await client.query(
+      `INSERT INTO user_stats (handle, avg_return, median_return, hit_rate, calls_total, calls_up, computed_at)
+       SELECT
+        $1,
+        COALESCE(AVG(return_pct), 0),
+        COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY return_pct), 0),
+        COALESCE(AVG(CASE WHEN is_up THEN 1.0 ELSE 0.0 END), 0),
+        COUNT(*)::int,
+        COUNT(*) FILTER (WHERE is_up)::int,
+        now()
+       FROM calls
+       WHERE lower(handle) = lower($1)
+       ON CONFLICT(handle) DO UPDATE SET
+        avg_return = excluded.avg_return, median_return = excluded.median_return,
+        hit_rate = excluded.hit_rate, calls_total = excluded.calls_total,
+        calls_up = excluded.calls_up, computed_at = now()`,
+      [handle],
     )
   })
 }

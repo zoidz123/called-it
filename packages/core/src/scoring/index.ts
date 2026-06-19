@@ -16,6 +16,37 @@ export async function scoreCalls(handle: string, classifiedTweets: ClassifiedTwe
   return { calls, stats: computeStats(handle, calls) }
 }
 
+export async function refreshExistingCallPrices(
+  existingCalls: Array<Omit<ScoredCall, 'evidence'> & { id?: string }>,
+): Promise<ScoredCall[]> {
+  const refreshed = await mapWithConcurrency(existingCalls, Number(process.env.PRICING_CONCURRENCY ?? 6), async (call) => {
+    const resolvedAsset: ResolvedAsset = {
+      symbol: call.asset,
+      assetClass: call.assetClass,
+      sourceId: call.sourceId,
+      name: null,
+      provider: call.assetClass === 'crypto' ? 'hyperliquid' : 'yahoo',
+    }
+    const prices = await getEntryAndCurrentPrices(resolvedAsset, call.firstPitchAt)
+    if (!prices) return null
+
+    const returnPct = call.direction === 'BULL'
+      ? (prices.current.price - prices.entry.price) / prices.entry.price
+      : (prices.entry.price - prices.current.price) / prices.entry.price
+
+    return {
+      ...call,
+      entryPrice: prices.entry.price,
+      currentPrice: prices.current.price,
+      returnPct,
+      isUp: returnPct > 0,
+      pricedAt: prices.current.pricedAt,
+      evidence: [],
+    }
+  })
+  return refreshed.filter(Boolean) as ScoredCall[]
+}
+
 async function scoreAssetCalls(
   handle: string,
   asset: string,

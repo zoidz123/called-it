@@ -17,6 +17,7 @@ export const users = pgTable('users', {
 export const scanJobs = pgTable('scan_jobs', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   handle: text('handle').notNull(),
+  jobType: text('job_type').notNull().default('full_scan'),
   status: text('status').notNull(),
   stage: text('stage'),
   progress: integer('progress').notNull().default(0),

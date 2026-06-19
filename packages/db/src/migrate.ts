@@ -17,6 +17,7 @@ const statements = [
   `CREATE TABLE IF NOT EXISTS scan_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     handle TEXT NOT NULL,
+    job_type TEXT NOT NULL DEFAULT 'full_scan',
     status TEXT NOT NULL CHECK (status IN ('pending','running','done','error')),
     stage TEXT,
     progress INTEGER NOT NULL DEFAULT 0,
@@ -35,6 +36,15 @@ const statements = [
     locked_at TIMESTAMPTZ,
     locked_by TEXT
   )`,
+  `ALTER TABLE scan_jobs ADD COLUMN IF NOT EXISTS job_type TEXT NOT NULL DEFAULT 'full_scan'`,
+  `DO $$
+   BEGIN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint WHERE conname = 'scan_jobs_job_type_check'
+    ) THEN
+      ALTER TABLE scan_jobs ADD CONSTRAINT scan_jobs_job_type_check CHECK (job_type IN ('full_scan','price_refresh'));
+    END IF;
+   END $$`,
   `CREATE TABLE IF NOT EXISTS tweets (
     tweet_id TEXT PRIMARY KEY,
     handle TEXT NOT NULL REFERENCES users(handle) ON DELETE CASCADE,
@@ -115,8 +125,9 @@ const statements = [
     status TEXT NOT NULL DEFAULT 'new',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS one_active_scan_per_handle
-    ON scan_jobs (lower(handle))
+  `DROP INDEX IF EXISTS one_active_scan_per_handle`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS one_active_scan_per_handle_type
+    ON scan_jobs (lower(handle), job_type)
     WHERE status IN ('pending','running')`,
   `CREATE INDEX IF NOT EXISTS idx_scan_jobs_status_created ON scan_jobs(status, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_users_stats_rank ON user_stats(avg_return DESC, hit_rate DESC)`,

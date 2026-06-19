@@ -8,6 +8,7 @@ import {
   getLeaderboard,
   getScanJob,
   getUserScorecard,
+  maybeEnqueueStaleRefreshes,
 } from '@called-it/db'
 import { getXUser, loadLocalEnv, parseXHandle } from '@called-it/core'
 import { startWorkerLoop } from './worker'
@@ -46,7 +47,8 @@ export async function buildServer() {
       includeTweets: request.query?.tweets !== '0',
     })
     if (!scorecard) return reply.code(404).send({ error: 'Scorecard not found' })
-    return scorecard
+    const refresh = await maybeEnqueueStaleRefreshes(scorecard.user.handle)
+    return { ...scorecard, refresh }
   })
 
   app.post('/api/users/:handle/asset-feedback', async (request: any, reply) => {
@@ -93,7 +95,10 @@ export async function buildServer() {
   app.get('/api/scan/:handle/precheck', async (request: any) => {
     const handle = parseXHandle(request.params.handle)
     const scorecard = await getUserScorecard(handle, { includeTweets: false })
-    if (scorecard) return { ok: true, handle: scorecard.user.handle, cached: true, freeToView: true }
+    if (scorecard) {
+      const refresh = await maybeEnqueueStaleRefreshes(scorecard.user.handle)
+      return { ok: true, handle: scorecard.user.handle, cached: true, freeToView: true, refresh }
+    }
     const user = await getXUser(handle)
     return {
       ok: true,
