@@ -35,11 +35,12 @@ export function ScanBox({
   const [scanProgress, setScanProgress] = useState(0)
   const [modalOpen, setModalOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const canScan = isValidXInput(handle)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     const clean = normalizeHandle(handle)
-    if (!clean) {
+    if (!canScan || !clean) {
       setInlineError('Enter a valid X handle or profile URL.')
       return
     }
@@ -101,9 +102,10 @@ export function ScanBox({
           value={handle}
           onChange={(event) => setHandle(event.target.value)}
           disabled={busy}
+          aria-invalid={handle.trim() ? !canScan : undefined}
           suppressHydrationWarning
         />
-        <button type="submit" disabled={busy}>{busy ? 'Scanning' : 'Scan'}</button>
+        <button type="submit" disabled={busy || !canScan}>{busy ? 'Scanning' : 'Scan'}</button>
       </form>
       <div className="scan-helper-row">
         <p>{helperText}</p>
@@ -164,19 +166,22 @@ function clampProgress(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)))
 }
 
+function isValidXInput(input: string) {
+  return Boolean(normalizeHandle(input))
+}
+
 function normalizeHandle(input: string) {
   const trimmed = input.trim()
   if (!trimmed) return ''
+  let handle = trimmed.replace(/^@/, '')
   try {
-    const url = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`)
+    const url = new URL(trimmed)
     const host = url.hostname.replace(/^www\./, '').toLowerCase()
-    if (host === 'x.com' || host === 'twitter.com') {
-      const handle = url.pathname.split('/').filter(Boolean)[0] ?? ''
-      if (/^[A-Za-z0-9_]{1,15}$/.test(handle)) return handle.toLowerCase()
-    }
-  } catch {
-    // Fall through to plain handle parsing.
+    if (host !== 'x.com' && host !== 'twitter.com') return ''
+    handle = url.pathname.split('/').filter(Boolean)[0] ?? ''
+  } catch (error) {
+    if (trimmed.includes('://')) return ''
   }
-  const handle = trimmed.replace(/^@/, '').replace(/[?#].*$/, '').replace(/\/.*$/, '')
+  handle = handle.replace(/^@/, '').trim()
   return /^[A-Za-z0-9_]{1,15}$/.test(handle) ? handle.toLowerCase() : ''
 }

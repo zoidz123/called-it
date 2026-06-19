@@ -37,6 +37,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
         <div className="home-board-head">
           <div>
             <h2>Leaderboard</h2>
+            <p>Ranked by what happened after public ticker calls.</p>
           </div>
         </div>
         {data.leaderboard.length ? <Leaderboard rows={data.leaderboard} /> : (
@@ -83,8 +84,8 @@ function Leaderboard({ rows }: { rows: LeaderboardRow[] }) {
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={row.handle}>
-              <td className="rank-cell">#{index + 1}</td>
+            <tr className={index < 3 ? 'leader-row podium' : 'leader-row'} key={row.handle}>
+              <td className="rank-cell"><span>#{index + 1}</span></td>
               <td>
                 <a href={`/u/${row.handle}`} className="trader-cell">
                   <Avatar src={row.avatar_url} name={row.name} />
@@ -105,9 +106,19 @@ function Leaderboard({ rows }: { rows: LeaderboardRow[] }) {
                   <span className="muted">No clean read yet</span>
                 )}
               </td>
-              <td><b className={row.avg_return >= 0 ? 'good' : 'bad'}>{formatPct(row.avg_return)}</b></td>
-              <td><b className={row.median_return >= 0 ? 'good' : 'bad'}>{formatPct(row.median_return)}</b></td>
-              <td>{row.calls_up}/{row.calls_total} mentions up ({formatWholePct(row.hit_rate)})</td>
+              <td className="metric-cell">
+                <span>Avg</span>
+                <b className={row.avg_return >= 0 ? 'good' : 'bad'}>{formatPct(row.avg_return)}</b>
+              </td>
+              <td className="metric-cell">
+                <span>Median</span>
+                <b className={row.median_return >= 0 ? 'good' : 'bad'}>{formatPct(row.median_return)}</b>
+              </td>
+              <td className="hit-cell">
+                <b>{row.calls_up}/{row.calls_total}</b>
+                <span>mentions up ({formatWholePct(row.hit_rate)})</span>
+                <i aria-hidden="true"><span style={{ width: `${hitRateWidth(row.hit_rate)}%` }} /></i>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -135,4 +146,9 @@ export function formatNumber(value: number) {
 
 function normalizeTicker(value: string) {
   return `$${String(value ?? '').replace(/^\$+/, '').trim().toUpperCase()}`
+}
+
+function hitRateWidth(value: number) {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, Math.round(value * 100)))
 }
