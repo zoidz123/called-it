@@ -12,6 +12,20 @@ export type Scorecard = {
     calls_up: number
     computed_at?: string
   }
+  refresh?: {
+    price?: {
+      oldestPricedAt?: string
+      callsTotal?: number
+      stale?: boolean
+      ttlHours?: number
+    } | null
+    scan?: {
+      lastScannedAt?: string
+      stale?: boolean
+      ttlHours?: number
+    } | null
+    jobs?: Record<string, unknown>
+  }
   scan: null | {
     tweets_scanned: number
     candidates: number

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { ProfileTradeContext } from '../../../components/ProfileTradeContext'
+import { ProfileAutoRefresh } from '../../../components/ProfileAutoRefresh'
 import { Avatar } from '../../../components/Avatar'
 import { apiGet } from '../../../lib/api'
 import { formatNumber, formatPct } from '../../../lib/format'
@@ -60,6 +61,11 @@ export default async function Profile({ params }: { params: Promise<{ handle: st
         assetRows={assetRows}
         handle={user.handle}
         updatedLabel={data.scan?.finished_at ? `Updated ${formatDate(data.scan.finished_at)}` : 'Scanning 30D'}
+      />
+      <ProfileAutoRefresh
+        handle={user.handle}
+        computedAt={user.computed_at ?? null}
+        enabled={shouldAutoRefresh(data)}
       />
     </main>
   )
@@ -150,4 +156,8 @@ function shareImageVersion(data: Scorecard | null) {
     Math.round((user.avg_return ?? 0) * 10000),
     Math.round((user.median_return ?? 0) * 10000),
   ].join(':'))
+}
+
+function shouldAutoRefresh(data: Scorecard) {
+  return Boolean(data.refresh?.price?.stale || data.refresh?.jobs?.priceRefresh || data.refresh?.jobs?.fullScan)
 }
