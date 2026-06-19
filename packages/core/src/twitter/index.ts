@@ -10,6 +10,7 @@ type Window = { start: Date; end: Date }
 const BASE = optionalEnv('TWITTERAPI_IO_BASE_URL') ?? 'https://api.twitterapi.io'
 const CREDIT_COOLDOWN_MS = 60 * 60 * 1000
 const SPLIT_DURATIONS_MS = [24 * 60 * 60 * 1000, 6 * 60 * 60 * 1000, 60 * 60 * 1000]
+const DEFAULT_DENSE_PROBE_PAGES = 4
 
 export function parseXHandle(input: string): string {
   const trimmed = String(input ?? '').trim()
@@ -60,10 +61,10 @@ export async function getXUser(handleInput: string): Promise<XUser> {
 export async function getAuthorTimeline(
   handleInput: string,
   {
-    days = Number(optionalEnv('TWITTER_LOOKBACK_DAYS') ?? 30),
+    days = Number(optionalEnv('TWITTER_LOOKBACK_DAYS') ?? 365),
     daysPerWindow = Number(optionalEnv('TWITTER_WINDOW_DAYS') ?? 7),
     maxPagesPerWindow = Number(optionalEnv('TWITTER_MAX_PAGES_PER_WINDOW') ?? optionalEnv('TWITTER_MAX_PAGES') ?? 8),
-    concurrency = Number(optionalEnv('TWITTER_FETCH_CONCURRENCY') ?? 5),
+    concurrency = defaultFetchConcurrency(),
     onPage,
   }: {
     days?: number
@@ -80,7 +81,7 @@ export async function getAuthorTimeline(
   const start = new Date(end.getTime() - days * 86400_000)
   const windows = buildWindows({ start, end, daysPerWindow })
   const results = await mapWithConcurrency(windows, concurrency, (window) =>
-    fetchAdaptiveWindow(handle, window, { maxPages: Math.max(1, maxPagesPerWindow), onPage }),
+    fetchAdaptiveWindow(handle, window, { maxPages: Math.max(1, maxPagesPerWindow), concurrency, onPage }),
   )
   return dedupeTweets(results.flatMap((result) => result.tweets))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -95,19 +96,20 @@ export function candidatesFromTweets(tweets: Tweet[]): TweetCandidate[] {
 async function fetchAdaptiveWindow(
   handle: string,
   window: Window,
-  { maxPages, depth = 0, onPage }: { maxPages: number; depth?: number; onPage?: (tweets: Tweet[]) => void },
-): Promise<{ tweets: Tweet[]; hasMore: boolean; nextToken?: string }> {
-  const probe = await fetchWindowPages(handle, window, { maxPages: Math.min(2, maxPages), onPage })
+  { maxPages, concurrency, depth = 0, onPage }: { maxPages: number; concurrency: number; depth?: number; onPage?: (tweets: Tweet[]) => void },
+): Promise<{ tweets: Tweet[]; hasMore: boolean; nextToken?: string; pageCount?: number }> {
+  const probePages = Math.min(denseProbePages(), maxPages)
+  const probe = await fetchWindowPages(handle, window, { maxPages: probePages, onPage })
   const shouldSplit = probe.hasMore && depth < SPLIT_DURATIONS_MS.length
   const splitWindows = shouldSplit ? splitWindow(window, SPLIT_DURATIONS_MS[depth]) : []
   if (splitWindows.length > 1) {
-    const results = await mapWithConcurrency(splitWindows, 3, (child) =>
-      fetchAdaptiveWindow(handle, child, { maxPages, depth: depth + 1, onPage }),
+    const results = await mapWithConcurrency(splitWindows, concurrency, (child) =>
+      fetchAdaptiveWindow(handle, child, { maxPages, concurrency, depth: depth + 1, onPage }),
     )
     return { tweets: dedupeTweets([...probe.tweets, ...results.flatMap((r) => r.tweets)]), hasMore: results.some((r) => r.hasMore) }
   }
-  if (probe.hasMore && probe.nextToken && probe.tweets.length > 0) {
-    const rest = await fetchWindowPages(handle, window, { maxPages: Math.max(0, maxPages - 2), nextToken: probe.nextToken, onPage })
+  if (probe.hasMore && probe.nextToken && probe.tweets.length > 0 && probe.pageCount < maxPages) {
+    const rest = await fetchWindowPages(handle, window, { maxPages: Math.max(0, maxPages - probe.pageCount), nextToken: probe.nextToken, onPage })
     return { tweets: [...probe.tweets, ...rest.tweets], hasMore: rest.hasMore, nextToken: rest.nextToken }
   }
   return probe
@@ -117,17 +119,19 @@ async function fetchWindowPages(
   handle: string,
   window: Window,
   { maxPages, nextToken, onPage }: { maxPages: number; nextToken?: string; onPage?: (tweets: Tweet[]) => void },
-): Promise<{ tweets: Tweet[]; hasMore: boolean; nextToken?: string }> {
+): Promise<{ tweets: Tweet[]; hasMore: boolean; nextToken?: string; pageCount: number }> {
   const tweets: Tweet[] = []
   let cursor = nextToken
+  let pageCount = 0
   for (let page = 0; page < maxPages; page += 1) {
     const payload = await getAuthorSearchPage(handle, { window, nextToken: cursor })
+    pageCount += 1
     tweets.push(...payload.tweets)
     onPage?.(payload.tweets)
     cursor = payload.nextToken
     if (!cursor) break
   }
-  return { tweets, hasMore: Boolean(cursor), nextToken: cursor }
+  return { tweets, hasMore: Boolean(cursor), nextToken: cursor, pageCount }
 }
 
 async function getAuthorSearchPage(handle: string, { window, nextToken }: { window: Window; nextToken?: string }): Promise<SearchPayload> {
@@ -250,14 +254,27 @@ function cachedProfile(handle: string): XUser | null {
 function parseKeys(): string[] {
   const pool = optionalEnv('TWITTERAPI_IO_API_KEYS')?.split(',').map((key) => key.trim()).filter(Boolean) ?? []
   const single = optionalEnv('TWITTERAPI_IO_API_KEY')
-  const fallback = optionalEnv('TWITTERAPI_IO_FALLBACK_API_KEY')
+  const fallback = optionalEnv('TWITTERAPI_IO_FALLBACK_API_KEY') ?? optionalEnv('TWITTERAPI_IO_API_KEY_4')
   return [...new Set([...pool, ...(single ? [single] : []), ...(fallback ? [fallback] : [])])]
 }
 
+function defaultFetchConcurrency() {
+  const configured = optionalEnv('TWITTERAPI_IO_FETCH_CONCURRENCY') ?? optionalEnv('TWITTER_FETCH_CONCURRENCY')
+  if (configured) return Math.max(1, Number(configured) || 1)
+  return Math.max(50, parseKeys().length * 25)
+}
+
+function denseProbePages() {
+  const configured = Number(optionalEnv('TWITTERAPI_IO_DENSE_PROBE_PAGES') ?? DEFAULT_DENSE_PROBE_PAGES)
+  return Math.max(1, Number.isFinite(configured) ? configured : DEFAULT_DENSE_PROBE_PAGES)
+}
+
 const scheduler = createRequestScheduler(parseKeys(), {
-  fallbackApiKey: optionalEnv('TWITTERAPI_IO_FALLBACK_API_KEY'),
-  minIntervalMs: Number(optionalEnv('TWITTERAPI_IO_MIN_INTERVAL_MS') ?? 250),
+  fallbackApiKey: optionalEnv('TWITTERAPI_IO_FALLBACK_API_KEY') ?? optionalEnv('TWITTERAPI_IO_API_KEY_4'),
+  minIntervalMs: Number(optionalEnv('TWITTERAPI_IO_MIN_INTERVAL_MS') ?? 50),
 })
+
+let inFlightTwitterRequests = 0
 
 async function callTwitterApi(path: string, params: Record<string, string | undefined>) {
   const url = new URL(path, BASE)
@@ -265,14 +282,47 @@ async function callTwitterApi(path: string, params: Record<string, string | unde
   let lastError: Error | undefined
   for (let attempt = 0; attempt < Math.max(3, scheduler.keyCount); attempt += 1) {
     const reservation = await scheduler.reserve()
-    const response = await fetch(url, {
-      headers: { 'X-API-Key': reservation.apiKey },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(Number(optionalEnv('TWITTERAPI_TIMEOUT_MS') ?? 15_000)),
+    const startedAt = Date.now()
+    inFlightTwitterRequests += 1
+    debugTwitterFetch('start', {
+      attempt: attempt + 1,
+      keyId: reservation.keyId,
+      path,
+      inFlight: inFlightTwitterRequests,
     })
-    const text = await response.text()
+    let response: Response
+    let text = ''
+    try {
+      response = await fetch(url, {
+        headers: { 'X-API-Key': reservation.apiKey },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(Number(optionalEnv('TWITTERAPI_TIMEOUT_MS') ?? 15_000)),
+      })
+      text = await response.text()
+    } catch (error) {
+      inFlightTwitterRequests -= 1
+      debugTwitterFetch('failed', {
+        attempt: attempt + 1,
+        keyId: reservation.keyId,
+        path,
+        durationMs: Date.now() - startedAt,
+        inFlight: inFlightTwitterRequests,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      throw error
+    }
     let payload: any
     try { payload = text ? JSON.parse(text) : {} } catch { payload = { error: text } }
+    inFlightTwitterRequests -= 1
+    debugTwitterFetch('complete', {
+      attempt: attempt + 1,
+      keyId: reservation.keyId,
+      path,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      inFlight: inFlightTwitterRequests,
+      tweets: Array.isArray(payload?.tweets) ? payload.tweets.length : Array.isArray(payload?.data) ? payload.data.length : undefined,
+    })
     if (response.ok && payload?.status !== 'error') return payload
     const message = payload?.message ?? payload?.msg ?? payload?.error ?? `TwitterAPI.io ${response.status}`
     lastError = new Error(String(message))
@@ -282,6 +332,11 @@ async function callTwitterApi(path: string, params: Record<string, string | unde
     await sleep(delay)
   }
   throw lastError ?? new Error('TwitterAPI.io request failed')
+}
+
+function debugTwitterFetch(event: 'start' | 'complete' | 'failed', fields: Record<string, unknown>) {
+  if (optionalEnv('DEBUG_TWITTER_FETCH') !== '1') return
+  console.log(`[twitter-fetch] ${event} ${JSON.stringify(fields)}`)
 }
 
 function createRequestScheduler(apiKeys: string[], { fallbackApiKey, minIntervalMs }: { fallbackApiKey?: string; minIntervalMs: number }) {

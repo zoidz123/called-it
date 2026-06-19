@@ -3,6 +3,11 @@
 import { FormEvent, useState } from 'react'
 import { API_URL } from '../lib/api'
 
+const IS_LOCAL_API = API_URL.startsWith('http://localhost') || API_URL.startsWith('http://127.0.0.1')
+const DEV_PAID_SCAN = process.env.NEXT_PUBLIC_ALLOW_DEV_PAID_SCAN === 'true'
+  || (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_ALLOW_DEV_PAID_SCAN !== 'false')
+  || (process.env.NODE_ENV !== 'production' && IS_LOCAL_API)
+
 type Job = {
   id: string
   status: string
@@ -13,35 +18,59 @@ type Job = {
   handle: string
 }
 
-export function ScanBox({ initialHandle = '', className = '' }: { initialHandle?: string; className?: string }) {
+export function ScanBox({
+  initialHandle = '',
+  className = '',
+  title = 'Who called it?',
+  helperText = 'Paste an X/Twitter profile to score their public ticker calls.',
+}: {
+  initialHandle?: string
+  className?: string
+  title?: string | null
+  helperText?: string
+}) {
   const [handle, setHandle] = useState(initialHandle)
-  const [status, setStatus] = useState('Scan an X profile to measure price action after public ticker mentions.')
+  const [inlineError, setInlineError] = useState('')
+  const [scanMessage, setScanMessage] = useState('')
+  const [scanProgress, setScanProgress] = useState(0)
+  const [modalOpen, setModalOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     const clean = normalizeHandle(handle)
     if (!clean) {
-      setStatus('Enter a valid X handle or profile URL.')
+      setInlineError('Enter a valid X handle or profile URL.')
       return
     }
+    setInlineError('')
+    setScanProgress(0)
+    setScanMessage('')
     setBusy(true)
-    setStatus('Checking if this trader is scannable...')
     try {
       const pre = await fetch(`${API_URL}/api/scan/${encodeURIComponent(clean)}/precheck`).then((res) => res.json())
       if (pre.cached) {
-        setStatus('Already on the board. Running a fresh pass...')
+        window.location.href = `/u/${pre.handle ?? clean}`
+        return
       } else {
         if (!pre.ok) throw new Error(pre.message || 'This account is not ready to scan.')
-        setStatus('Starting the paid scan...')
+        setScanMessage(DEV_PAID_SCAN ? 'Starting scan...' : 'Starting the paid scan...')
       }
-      const created = await fetch(`${API_URL}/api/scan/${encodeURIComponent(clean)}?dev=1`, {
+      setScanProgress(5)
+      setModalOpen(true)
+      const scanUrl = `${API_URL}/api/scan/${encodeURIComponent(clean)}${DEV_PAID_SCAN ? '?dev=1' : ''}`
+      const created = await fetch(scanUrl, {
         method: 'POST',
-        headers: { 'x-dev-paid': 'true' },
-      }).then((res) => res.json())
+        headers: DEV_PAID_SCAN ? { 'x-dev-paid': 'true' } : undefined,
+      }).then(async (res) => {
+        const payload = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(payload?.error || 'Payment is required to start a fresh scan.')
+        return payload
+      })
       await poll(created.jobId)
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Scan failed.')
+      setInlineError(error instanceof Error ? error.message : 'Scan failed.')
+      setModalOpen(false)
       setBusy(false)
     }
   }
@@ -51,7 +80,8 @@ export function ScanBox({ initialHandle = '', className = '' }: { initialHandle?
       const payload = await fetch(`${API_URL}/api/jobs/${jobId}`).then((res) => res.json())
       const job: Job = payload.job
       if (!job) throw new Error('Job disappeared.')
-      setStatus(`${job.progress ?? 0}% - ${job.progress_message ?? job.stage ?? job.status}`)
+      setScanProgress(clampProgress(job.progress ?? 0))
+      setScanMessage(job.progress_message ?? job.stage ?? job.status)
       if (job.status === 'done') {
         window.location.href = `/u/${job.handle}`
         return
@@ -63,7 +93,7 @@ export function ScanBox({ initialHandle = '', className = '' }: { initialHandle?
 
   return (
     <section className={`scan-box ${className}`.trim()}>
-      <h2>Who called it?</h2>
+      {title ? <h2>{title}</h2> : null}
       <form className="scan-form" onSubmit={submit}>
         <input
           aria-label="X handle"
@@ -75,9 +105,63 @@ export function ScanBox({ initialHandle = '', className = '' }: { initialHandle?
         />
         <button type="submit" disabled={busy}>{busy ? 'Scanning' : 'Scan'}</button>
       </form>
-      <p className="status-line">{status}</p>
+      <div className="scan-helper-row">
+        <p>{helperText}</p>
+        <span className="scan-info">
+          <button type="button" aria-label="How scans work">?</button>
+          <span className="scan-info-popover" role="tooltip">
+            We pull public X/Twitter posts from the past year, filter for stock and crypto ticker mentions, then price what happened after each call.
+          </span>
+        </span>
+      </div>
+      {inlineError ? <p className="status-line scan-error">{inlineError}</p> : null}
+      {busy && !modalOpen ? (
+        <button className="scan-progress-reopen" type="button" onClick={() => setModalOpen(true)}>
+          View scan progress
+        </button>
+      ) : null}
+      {busy && modalOpen ? (
+        <div className="scan-modal-backdrop" role="presentation">
+          <div
+            aria-labelledby="scan-modal-title"
+            aria-modal="true"
+            className="scan-modal"
+            role="dialog"
+          >
+            <div className="scan-modal-head">
+              <div>
+                <span>Scanning</span>
+                <h3 id="scan-modal-title">Building your scorecard</h3>
+              </div>
+              <button
+                aria-label="Close progress dialog"
+                className="scan-modal-close"
+                type="button"
+                onClick={() => setModalOpen(false)}
+              >
+                X
+              </button>
+            </div>
+            <div className="scan-progress-meter" aria-label={`Scan ${scanProgress}% complete`}>
+              <span style={{ width: `${scanProgress}%` }} />
+            </div>
+            <div className="scan-modal-status">
+              <strong>{scanProgress}%</strong>
+              <p>{scanMessage}</p>
+            </div>
+            <p className="scan-modal-note">
+              The scan is still running in the background. You can close this tab and come back later; the scorecard will be waiting when it is ready.
+            </p>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
+}
+
+function clampProgress(value: number) {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, Math.round(value)))
 }
 
 function normalizeHandle(input: string) {

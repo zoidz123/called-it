@@ -24,15 +24,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
   return (
     <main className="home-page">
       <header className="home-header">
-        <div>
+        <div className="home-hero-copy">
           <a className="home-logo" href="/">Called It</a>
-          <p>Track what happens after public stock and crypto ticker mentions.</p>
+          <h1>Find the traders who spotted the move early.</h1>
+        </div>
+        <div id="scan" className="home-hero-scan">
+          <ScanBox initialHandle={initialHandle} className="home-scan" title={null} />
         </div>
       </header>
-
-      <div id="scan">
-        <ScanBox initialHandle={initialHandle} className="home-scan" />
-      </div>
 
       <section className="home-board">
         <div className="home-board-head">

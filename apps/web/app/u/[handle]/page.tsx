@@ -52,15 +52,13 @@ export default async function Profile({ params }: { params: Promise<{ handle: st
   const data = await apiGet<Scorecard>(`/api/users/${encodeURIComponent(handle)}?tweets=0`)
   data.calls ??= []
   const user = data.user
-  const profileBio = normalizeBio(user.bio)
   const assetRows = buildAssetRows(data)
 
   return (
     <main className="calls-page">
       <header className="calls-header">
-        <div>
+        <div className="profile-header-copy">
           <a className="calls-logo" href="/">Called It</a>
-          <p>Track what happens after public stock and crypto ticker mentions.</p>
         </div>
       </header>
 
@@ -69,7 +67,6 @@ export default async function Profile({ params }: { params: Promise<{ handle: st
           <Avatar src={user.avatar_url} name={user.name} />
           <div>
             <h1>{user.name} <span>@{user.handle}</span></h1>
-            {profileBio ? <p>{profileBio}</p> : null}
           </div>
         </div>
         <dl className="calls-stats">
@@ -166,13 +163,6 @@ function formatDate(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function normalizeBio(value: string | null) {
-  if (!value || value.toLowerCase().includes('cached prototype profile')) {
-    return null
-  }
-  return value
 }
 
 function normalizeTicker(value: string) {

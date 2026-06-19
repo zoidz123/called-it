@@ -73,7 +73,7 @@ export function TweetFeed({ tweets, tickerSearch }: { tweets: FeedTweet[], ticke
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="search text or $ASSET"
+          placeholder="Search text or $ASSET"
           aria-label="Search tweets"
           suppressHydrationWarning
         />

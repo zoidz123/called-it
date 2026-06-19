@@ -32,10 +32,12 @@ type ProfileTradeContextProps = {
 
 export function ProfileTradeContext({ assetRows, handle, updatedLabel }: ProfileTradeContextProps) {
   const [tickerSearch, setTickerSearch] = useState<TickerSearch | null>(null)
-  const featuredRows = assetRows
+  const sortedRows = assetRows
+    .slice()
+    .sort((a, b) => rowImpact(b) - rowImpact(a))
+  const featuredRows = sortedRows
     .filter((row) => row.legs.length)
     .slice()
-    .sort((a, b) => Math.abs(rowMove(b)) - Math.abs(rowMove(a)))
     .slice(0, 4)
 
   function searchTicker(ticker: string) {
@@ -52,10 +54,10 @@ export function ProfileTradeContext({ assetRows, handle, updatedLabel }: Profile
               <h2>Scorecard</h2>
               <span>{updatedLabel}</span>
             </div>
-            <p className="scoreboard-note">We measure what happened after public ticker mentions using the stance expressed at the time. If a trader flips on a ticker, the price move is shown as separate stance legs. This is not portfolio return or proof of entry or exit.</p>
+            <p className="scoreboard-note">This tracks public ticker mentions and the price move after each call. It is not a portfolio return estimate and should not be used to judge actual PnL, position sizing, entries, exits, or holding periods.</p>
           </div>
         </div>
-        {featuredRows.length ? (
+          {featuredRows.length ? (
           <div className="move-spotlight" aria-label="Largest post-mention price moves">
             {featuredRows.map((row) => (
               <button
@@ -74,32 +76,32 @@ export function ProfileTradeContext({ assetRows, handle, updatedLabel }: Profile
         <div className="move-board" role="table" aria-label="Scorecard">
           <div className="move-board-head" role="row">
             <span role="columnheader">Asset</span>
-            <span role="columnheader">Signal</span>
             <span role="columnheader">Mentions</span>
-            <span role="columnheader">Move Since Mention</span>
+            <span role="columnheader">Outcome</span>
           </div>
-          {assetRows.map((row) => (
-            <article className="move-row" role="row" key={row.id}>
+          {sortedRows.map((row) => (
+            <article className={`move-row ${rowMove(row) >= 0 ? 'up' : 'down'}`} role="row" key={row.id}>
               <div className="move-asset-cell" role="cell">
-                <button
-                  type="button"
-                  className="asset-link-button"
-                  onClick={() => searchTicker(row.asset)}
-                  aria-label={`Search tweets for ${row.asset}`}
-                >
-                  {row.asset}
-                </button>
-                <span>{formatDate(row.firstPitchAt)}</span>
-              </div>
-              <div className="move-stance-cell" role="cell">
-                <StanceSequence label={row.stanceLabel} />
+                <div className="move-asset-main">
+                  <button
+                    type="button"
+                    className="asset-link-button"
+                    onClick={() => searchTicker(row.asset)}
+                    aria-label={`Search tweets for ${row.asset}`}
+                  >
+                    {row.asset}
+                  </button>
+                  <StanceSequence label={row.stanceLabel} />
+                </div>
+                <span>First mentioned {formatDate(row.firstPitchAt)}</span>
               </div>
               <div className="move-count-cell" role="cell">
                 <b>{row.total}</b>
+                <span>{row.total === 1 ? 'mention' : 'mentions'}</span>
               </div>
               <div className="move-result-cell" role="cell">
                 {row.legs.length === 0 ? (
-                  <span className="muted">no chart yet</span>
+                  <span className="muted">No pricing found</span>
                 ) : (
                   <MoveLegs legs={row.legs} />
                 )}
@@ -119,28 +121,24 @@ export function ProfileTradeContext({ assetRows, handle, updatedLabel }: Profile
 }
 
 function MoveLegs({ legs }: { legs: PriceLeg[] }) {
+  const showLegLabels = legs.length > 1
   return (
     <div className="price-legs">
       {legs.map((leg) => {
-        const move = rawMovePct(leg)
+        const move = legMovePct(leg)
         return (
           <div className="price-leg" key={leg.id}>
             <div className="price-leg-top">
-              <span className={`mini-stance ${leg.direction === 'BULL' ? 'bull' : 'bear'}`}>{leg.direction}</span>
-              <b className={move >= 0 ? 'good' : 'bad'}>{formatPct(move)}</b>
+              {showLegLabels ? (
+                <span className={`mini-stance ${leg.direction === 'BULL' ? 'bull' : 'bear'}`}>{leg.direction}</span>
+              ) : null}
+              <b className={`move-percent ${move >= 0 ? 'good' : 'bad'}`}>{formatPct(move)}</b>
               <span className="price-hop">
                 <span>{formatPrice(leg.startPrice)}</span>
                 <span aria-hidden="true">→</span>
                 <span>{formatPrice(leg.endPrice)}</span>
               </span>
             </div>
-            <div className="move-meter" aria-hidden="true">
-              <span
-                className={move >= 0 ? 'up' : 'down'}
-                style={{ width: `${Math.min(100, Math.max(8, Math.abs(move) * 100))}%` }}
-              />
-            </div>
-            <span className="muted">{formatDate(leg.startAt)} → {leg.isCurrent ? 'now' : formatDate(leg.endAt ?? '')}</span>
           </div>
         )
       })}
@@ -164,13 +162,16 @@ function StanceSequence({ label }: { label: string }) {
 
 function rowMove(row: AssetRow) {
   if (!row.legs.length) return 0
-  const first = row.legs[0]
-  const last = row.legs[row.legs.length - 1]
-  return (last.endPrice - first.startPrice) / first.startPrice
+  const currentLeg = row.legs.find((leg) => leg.isCurrent) ?? row.legs[row.legs.length - 1]
+  return currentLeg.returnPct
 }
 
-function rawMovePct(leg: PriceLeg) {
-  return (leg.endPrice - leg.startPrice) / leg.startPrice
+function rowImpact(row: AssetRow) {
+  return Math.abs(rowMove(row)) * Math.log(row.total + 1)
+}
+
+function legMovePct(leg: PriceLeg) {
+  return leg.returnPct
 }
 
 function formatDate(value: string) {

@@ -7,7 +7,6 @@ import {
   getLeaderboard,
   getScanJob,
   getUserScorecard,
-  hasFreshScorecard,
 } from '@called-it/db'
 import { getXUser, loadLocalEnv, parseXHandle } from '@called-it/core'
 import { startWorkerLoop } from './worker'
@@ -16,6 +15,7 @@ loadLocalEnv()
 
 const PORT = Number(process.env.API_PORT ?? 3001)
 const PRICE = process.env.SCAN_PRICE ?? '2.00'
+const ALLOW_DEV_PAID_SCAN = process.env.ALLOW_DEV_PAID_SCAN === 'true'
 const USDCE_MAINNET = '0x20c000000000000000000000b9537d11c60e8b50'
 const RECIPIENT = process.env.RECIPIENT as `0x${string}` | undefined
 const SECRET_KEY = process.env.MPP_SECRET_KEY
@@ -52,21 +52,21 @@ export async function buildServer() {
 
   app.get('/api/scan/:handle/precheck', async (request: any) => {
     const handle = parseXHandle(request.params.handle)
-    const cached = await hasFreshScorecard(handle)
-    if (cached) return { ok: true, handle, cached: true, freeToView: true }
+    const scorecard = await getUserScorecard(handle, { includeTweets: false })
+    if (scorecard) return { ok: true, handle: scorecard.user.handle, cached: true, freeToView: true }
     const user = await getXUser(handle)
     return {
       ok: true,
       handle: user.handle,
       cached: false,
       profile: user,
-      message: 'Ready to scan the last 30 days of tweets.',
+      message: 'Ready to scan the past year of tweets.',
     }
   })
 
   app.post('/api/scan/:handle', async (request: any, reply) => {
     const handle = parseXHandle(request.params.handle)
-    const isDevPaid = request.headers['x-dev-paid'] === 'true' || request.query?.dev === '1'
+    const isDevPaid = ALLOW_DEV_PAID_SCAN && (request.headers['x-dev-paid'] === 'true' || request.query?.dev === '1')
     if (!isDevPaid) {
       if (!mppx) return reply.code(500).send({ error: 'MPP is not configured.' })
       const webRequest = fastifyToRequest(request)

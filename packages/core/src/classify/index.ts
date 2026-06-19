@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { optionalEnv, requiredEnv } from '../env'
-import type { RawStance, TweetCandidate } from '../types'
+import type { ClassifiedTweet, RawStance, TweetCandidate } from '../types'
 
 export const STANCE_SYSTEM_PROMPT = `You classify financial tweets to find a person's HIGH-CONVICTION TRADE CALLS.
 
@@ -97,6 +97,18 @@ export async function classifyCandidates(
   })).filter((tweet) => tweet.stances.length > 0)
 }
 
+export function filterIgnoredCashtags(handle: string, tweets: ClassifiedTweet[]): ClassifiedTweet[] {
+  const ignored = ignoredCashtagsForHandle(handle)
+  if (!ignored.size) return tweets
+
+  return tweets
+    .map((tweet) => ({
+      ...tweet,
+      stances: tweet.stances.filter((stance) => !ignored.has(normalizeAsset(stance.asset))),
+    }))
+    .filter((tweet) => tweet.stances.length > 0)
+}
+
 function loadLocalClassificationCache(): Map<string, RawStance[]> {
   const out = new Map<string, RawStance[]>()
   const dir = resolve(process.cwd(), '.cache/twitter')
@@ -130,6 +142,24 @@ export function extractCashtags(text: string): string[] {
 export function normalizeAsset(asset: string): string {
   const value = String(asset ?? '').trim().toUpperCase().replace(/^\$+/, '')
   return value ? `$${value}` : '$UNKNOWN'
+}
+
+function ignoredCashtagsForHandle(handle: string): Set<string> {
+  const normalizedHandle = String(handle ?? '').trim().toLowerCase()
+  const defaults: Record<string, string[]> = {
+    blknoiz06: ['$BULL'],
+  }
+  const out = new Set((defaults[normalizedHandle] ?? []).map(normalizeAsset))
+  const rawConfig = optionalEnv('IGNORED_CASTAGS_BY_HANDLE') ?? optionalEnv('IGNORED_CASHTAGS_BY_HANDLE') ?? ''
+  for (const rule of rawConfig.split(';')) {
+    const [rawHandle, rawAssets] = rule.split(':')
+    if (String(rawHandle ?? '').trim().toLowerCase() !== normalizedHandle) continue
+    for (const asset of String(rawAssets ?? '').split(',')) {
+      const normalizedAsset = normalizeAsset(asset)
+      if (normalizedAsset !== '$UNKNOWN') out.add(normalizedAsset)
+    }
+  }
+  return out
 }
 
 export function chunk<T>(items: T[], size: number): T[][] {

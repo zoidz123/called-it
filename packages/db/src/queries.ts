@@ -98,7 +98,10 @@ export async function persistScorecard({
       [user.handle, user.id, user.name, user.avatarUrl, user.bio, user.followers, user.verified],
     )
 
+    await client.query(`DELETE FROM call_tweets WHERE handle = $1`, [user.handle])
     await client.query(`DELETE FROM tweet_stances WHERE handle = $1`, [user.handle])
+    await client.query(`DELETE FROM calls WHERE handle = $1`, [user.handle])
+    await client.query(`DELETE FROM tweets WHERE handle = $1`, [user.handle])
 
     for (const tweet of classifiedTweets) {
       await client.query(
@@ -115,9 +118,6 @@ export async function persistScorecard({
         )
       }
     }
-
-    await client.query(`DELETE FROM call_tweets WHERE handle = $1`, [user.handle])
-    await client.query(`DELETE FROM calls WHERE handle = $1`, [user.handle])
 
     for (const call of calls) {
       await client.query(
