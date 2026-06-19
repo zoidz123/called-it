@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 
 const description = 'Find the traders who spotted the move early.'
-const ogImage = '/og-image.png'
+const ogImage = '/og-image.png?v=052886a'
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.calledit.site'),
