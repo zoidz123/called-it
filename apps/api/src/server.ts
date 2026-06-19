@@ -33,7 +33,17 @@ export async function buildServer() {
   app.get('/health', async () => ({ ok: true, service: 'called-it-api' }))
 
   app.get('/api/leaderboard', async (request: any) => {
-    return { leaderboard: await getLeaderboard({ sort: request.query?.sort === 'hitrate' ? 'hitrate' : 'return' }) }
+    const limit = clampNumber(request.query?.limit, 100, 1, 100)
+    const offset = clampNumber(request.query?.offset, 0, 0, 10_000)
+    return {
+      leaderboard: await getLeaderboard({
+        sort: request.query?.sort === 'hitrate' ? 'hitrate' : 'return',
+        limit,
+        offset,
+      }),
+      limit,
+      offset,
+    }
   })
 
   app.get('/api/users/:handle', async (request: any, reply) => {
@@ -100,6 +110,12 @@ async function sendWebResponse(reply: any, response: Response) {
   const contentType = response.headers.get('content-type') ?? ''
   if (contentType.includes('application/json')) return reply.send(await response.json())
   return reply.send(await response.text())
+}
+
+function clampNumber(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, Math.floor(parsed)))
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

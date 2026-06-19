@@ -154,8 +154,10 @@ export async function persistScorecard({
   })
 }
 
-export async function getLeaderboard({ sort = 'return', limit = 50 } = {}) {
-  const order = sort === 'hitrate' ? 's.hit_rate DESC, s.avg_return DESC' : 's.avg_return DESC, s.hit_rate DESC'
+export async function getLeaderboard({ sort = 'return', limit = 100, offset = 0 } = {}) {
+  const order = sort === 'hitrate'
+    ? 's.hit_rate DESC, s.avg_return DESC, u.handle ASC'
+    : 's.avg_return DESC, s.hit_rate DESC, u.handle ASC'
   const { rows } = await query(
     `SELECT u.handle, u.name, u.avatar_url, u.bio, u.followers, s.avg_return, s.median_return,
       s.hit_rate, s.calls_total, s.calls_up,
@@ -167,8 +169,8 @@ export async function getLeaderboard({ sort = 'return', limit = 50 } = {}) {
      ) c ON true
      WHERE s.calls_total >= 1
      ORDER BY ${order}
-     LIMIT $1`,
-    [limit],
+     LIMIT $1 OFFSET $2`,
+    [limit, offset],
   )
   return rows.map(serializeRow)
 }

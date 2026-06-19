@@ -30,11 +30,16 @@ type ProfileTradeContextProps = {
   updatedLabel: string
 }
 
+const SCORECARD_PAGE_SIZE = 15
+
 export function ProfileTradeContext({ assetRows, handle, updatedLabel }: ProfileTradeContextProps) {
   const [tickerSearch, setTickerSearch] = useState<TickerSearch | null>(null)
+  const [visibleRowCount, setVisibleRowCount] = useState(SCORECARD_PAGE_SIZE)
   const sortedRows = assetRows
     .slice()
     .sort((a, b) => rowImpact(b) - rowImpact(a))
+  const visibleRows = sortedRows.slice(0, visibleRowCount)
+  const hiddenRowCount = Math.max(0, sortedRows.length - visibleRows.length)
   const featuredRows = sortedRows
     .filter((row) => row.legs.length)
     .slice()
@@ -73,41 +78,53 @@ export function ProfileTradeContext({ assetRows, handle, updatedLabel }: Profile
             ))}
           </div>
         ) : null}
-        <div className="move-board" role="table" aria-label="Scorecard">
-          <div className="move-board-head" role="row">
-            <span role="columnheader">Asset</span>
-            <span role="columnheader">Mentions</span>
-            <span role="columnheader">Outcome</span>
-          </div>
-          {sortedRows.map((row) => (
-            <article className={`move-row ${rowMove(row) >= 0 ? 'up' : 'down'}`} role="row" key={row.id}>
-              <div className="move-asset-cell" role="cell">
-                <div className="move-asset-main">
-                  <button
-                    type="button"
-                    className="asset-link-button"
-                    onClick={() => searchTicker(row.asset)}
-                    aria-label={`Search tweets for ${row.asset}`}
-                  >
-                    {row.asset}
-                  </button>
-                  <StanceSequence label={row.stanceLabel} />
+        <div className="move-board">
+          <div role="table" aria-label="Scorecard">
+            <div className="move-board-head" role="row">
+              <span role="columnheader">Asset</span>
+              <span role="columnheader">Mentions</span>
+              <span role="columnheader">Outcome</span>
+            </div>
+            {visibleRows.map((row) => (
+              <article className={`move-row ${rowMove(row) >= 0 ? 'up' : 'down'}`} role="row" key={row.id}>
+                <div className="move-asset-cell" role="cell">
+                  <div className="move-asset-main">
+                    <button
+                      type="button"
+                      className="asset-link-button"
+                      onClick={() => searchTicker(row.asset)}
+                      aria-label={`Search tweets for ${row.asset}`}
+                    >
+                      {row.asset}
+                    </button>
+                    <StanceSequence label={row.stanceLabel} />
+                  </div>
+                  <span>First mentioned {formatDate(row.firstPitchAt)}</span>
                 </div>
-                <span>First mentioned {formatDate(row.firstPitchAt)}</span>
-              </div>
-              <div className="move-count-cell" role="cell">
-                <b>{row.total}</b>
-                <span>{row.total === 1 ? 'mention' : 'mentions'}</span>
-              </div>
-              <div className="move-result-cell" role="cell">
-                {row.legs.length === 0 ? (
-                  <span className="muted">No pricing found</span>
-                ) : (
-                  <MoveLegs legs={row.legs} />
-                )}
-              </div>
-            </article>
-          ))}
+                <div className="move-count-cell" role="cell">
+                  <b>{row.total}</b>
+                  <span>{row.total === 1 ? 'mention' : 'mentions'}</span>
+                </div>
+                <div className="move-result-cell" role="cell">
+                  {row.legs.length === 0 ? (
+                    <span className="muted">No pricing found</span>
+                  ) : (
+                    <MoveLegs legs={row.legs} />
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+          {hiddenRowCount ? (
+            <div className="scorecard-more-row">
+              <button
+                type="button"
+                onClick={() => setVisibleRowCount((count) => count + SCORECARD_PAGE_SIZE)}
+              >
+                Show {Math.min(SCORECARD_PAGE_SIZE, hiddenRowCount)} more
+              </button>
+            </div>
+          ) : null}
         </div>
       </section>
 

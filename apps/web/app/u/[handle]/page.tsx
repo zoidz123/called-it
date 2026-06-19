@@ -1,7 +1,8 @@
 import type { FeedTweet } from '../../../components/TweetFeed'
 import { ProfileTradeContext, type AssetRow, type PriceLeg } from '../../../components/ProfileTradeContext'
+import { Avatar } from '../../../components/Avatar'
 import { apiGet } from '../../../lib/api'
-import { Avatar, formatPct } from '../../page'
+import { formatNumber, formatPct } from '../../../lib/format'
 
 type Scorecard = {
   user: {
@@ -67,6 +68,7 @@ export default async function Profile({ params }: { params: Promise<{ handle: st
           <Avatar src={user.avatar_url} name={user.name} />
           <div>
             <h1>{user.name} <span>@{user.handle}</span></h1>
+            <p>{formatNumber(user.followers)} followers{user.bio ? ` · ${user.bio}` : ''}</p>
           </div>
         </div>
         <dl className="calls-stats">
@@ -83,7 +85,7 @@ export default async function Profile({ params }: { params: Promise<{ handle: st
             <dd>{Math.round((user.hit_rate ?? 0) * 100)}%</dd>
           </div>
           <div>
-            <dt>Mentions Up</dt>
+            <dt>Hits</dt>
             <dd>{user.calls_up}/{user.calls_total}</dd>
           </div>
         </dl>
