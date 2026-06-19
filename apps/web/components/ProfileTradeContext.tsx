@@ -3,28 +3,9 @@
 import { Flag } from 'lucide-react'
 import { type FormEvent, useRef, useState } from 'react'
 import { API_URL } from '../lib/api'
+import { formatDate, rowAction, rowDirection, rowImpact, rowMove, type AssetRow, type PriceLeg } from '../lib/scorecard'
 import { TradeContext } from './TradeContext'
 import type { TickerSearch } from './TweetFeed'
-
-export type AssetRow = {
-  id: string
-  asset: string
-  total: number
-  stanceLabel: string
-  firstPitchAt: string
-  legs: PriceLeg[]
-}
-
-export type PriceLeg = {
-  id: string
-  direction: 'BULL' | 'BEAR'
-  startAt: string
-  endAt: string | null
-  startPrice: number
-  endPrice: number
-  returnPct: number
-  isCurrent: boolean
-}
 
 type ProfileTradeContextProps = {
   assetRows: AssetRow[]
@@ -300,38 +281,8 @@ function StanceSequence({ label }: { label: string }) {
   )
 }
 
-function rowMove(row: AssetRow) {
-  if (!row.legs.length) return 0
-  const currentLeg = currentRowLeg(row)
-  return currentLeg?.returnPct ?? 0
-}
-
-function rowAction(row: AssetRow) {
-  return rowDirection(row) === 'BEAR' ? 'SELL' : 'BUY'
-}
-
-function rowDirection(row: AssetRow) {
-  const currentLeg = currentRowLeg(row)
-  if (currentLeg) return currentLeg.direction
-  return row.stanceLabel.includes('BEAR') && !row.stanceLabel.includes('BULL') ? 'BEAR' : 'BULL'
-}
-
-function currentRowLeg(row: AssetRow) {
-  return row.legs.find((leg) => leg.isCurrent) ?? row.legs[row.legs.length - 1] ?? null
-}
-
-function rowImpact(row: AssetRow) {
-  return Math.abs(rowMove(row)) * Math.log(row.total + 1)
-}
-
 function legMovePct(leg: PriceLeg) {
   return leg.returnPct
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function formatPct(value: number) {

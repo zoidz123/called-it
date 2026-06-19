@@ -1,59 +1,50 @@
-import type { FeedTweet } from '../../../components/TweetFeed'
-import { ProfileTradeContext, type AssetRow, type PriceLeg } from '../../../components/ProfileTradeContext'
+import type { Metadata } from 'next'
+import { ProfileTradeContext } from '../../../components/ProfileTradeContext'
 import { Avatar } from '../../../components/Avatar'
 import { apiGet } from '../../../lib/api'
 import { formatNumber, formatPct } from '../../../lib/format'
+import { buildAssetRows, formatDate, topShareRows, type Scorecard, type ShareCallRow } from '../../../lib/scorecard'
 
-type Scorecard = {
-  user: {
-    handle: string
-    name: string
-    avatar_url: string | null
-    bio: string | null
-    followers: number
-    avg_return: number
-    median_return: number
-    hit_rate: number
-    calls_total: number
-    calls_up: number
-    computed_at?: string
+const SITE_URL = 'https://www.calledit.site'
+const SHARE_IMAGE_VERSION = '1'
+
+export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }): Promise<Metadata> {
+  const { handle } = await params
+  const scorecard = await loadScorecard(handle).catch(() => null)
+  const displayHandle = scorecard?.user.handle ?? handle.replace(/^@/, '')
+  const title = scorecard
+    ? `${scorecard.user.name} (@${scorecard.user.handle}) on Called It`
+    : `@${displayHandle} on Called It`
+  const description = scorecard
+    ? `${formatPct(scorecard.user.avg_return ?? 0)} avg move, ${Math.round((scorecard.user.hit_rate ?? 0) * 100)}% hit rate across public ticker calls.`
+    : 'Find the traders who spotted the move early.'
+  const image = `/u/${encodeURIComponent(displayHandle)}/opengraph-image?v=${SHARE_IMAGE_VERSION}`
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: 'profile',
+      images: [{ url: image, width: 1200, height: 630, alt: `${title} share card` }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: [image],
+    },
   }
-  scan: null | {
-    tweets_scanned: number
-    candidates: number
-    classified: number
-    calls_found: number
-    priced_calls: number
-    finished_at: string
-  }
-  calls: {
-    asset: string
-    direction: 'BULL' | 'BEAR'
-    asset_class: string
-    first_pitch_at: string
-    entry_price: number
-    current_price: number
-    return_pct: number
-    mentions: number
-    bulls: number
-    bears: number
-  }[]
-  assets: {
-    asset: string
-    total: number
-    bulls: number
-    bears: number
-    first_pitch_at: string
-  }[]
-  tweets: FeedTweet[]
 }
 
 export default async function Profile({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params
-  const data = await apiGet<Scorecard>(`/api/users/${encodeURIComponent(handle)}?tweets=0`)
+  const data = await loadScorecard(handle)
   data.calls ??= []
   const user = data.user
   const assetRows = buildAssetRows(data)
+  const shareRows = topShareRows(assetRows, 3)
 
   return (
     <main className="calls-page">
@@ -91,6 +82,8 @@ export default async function Profile({ params }: { params: Promise<{ handle: st
         </dl>
       </section>
 
+      <ShareImageCard data={data} rows={shareRows} />
+
       <ProfileTradeContext
         assetRows={assetRows}
         handle={user.handle}
@@ -100,73 +93,76 @@ export default async function Profile({ params }: { params: Promise<{ handle: st
   )
 }
 
-function buildAssetRows(data: Scorecard): AssetRow[] {
-  const callsByAsset = new Map<string, Scorecard['calls']>()
-  for (const call of data.calls) {
-    const ticker = normalizeTicker(call.asset)
-    callsByAsset.set(ticker, [...(callsByAsset.get(ticker) ?? []), call])
-  }
-
-  const rowsFromCalls = [...callsByAsset.entries()].map(([ticker, calls]) => {
-    const sortedCalls = calls
-      .slice()
-      .sort((a, b) => new Date(a.first_pitch_at).getTime() - new Date(b.first_pitch_at).getTime())
-    const first = sortedCalls[0]
-    return {
-      id: ticker,
-      asset: ticker,
-      total: first?.mentions ?? 0,
-      stanceLabel: sortedCalls.map((call) => call.direction).join(' -> '),
-      firstPitchAt: first?.first_pitch_at ?? '',
-      legs: buildPriceLegs(sortedCalls),
-    }
-  })
-
-  const pricedAssets = new Set(rowsFromCalls.map((row) => row.asset))
-  const unpricedRows = (data.assets ?? [])
-    .filter((asset) => !pricedAssets.has(normalizeTicker(asset.asset)))
-    .map((asset) => {
-      const ticker = normalizeTicker(asset.asset)
-      return {
-        id: `${ticker}:UNPRICED`,
-        asset: ticker,
-        total: asset.total,
-        stanceLabel: asset.bears > asset.bulls ? 'BEAR' : 'BULL',
-        firstPitchAt: asset.first_pitch_at,
-        legs: [],
-      }
-    })
-
-  return [...rowsFromCalls, ...unpricedRows]
-    .sort((a, b) => b.total - a.total || a.asset.localeCompare(b.asset))
+async function loadScorecard(handle: string) {
+  const data = await apiGet<Scorecard>(`/api/users/${encodeURIComponent(handle)}?tweets=0`)
+  data.calls ??= []
+  data.assets ??= []
+  return data
 }
 
-function buildPriceLegs(calls: Scorecard['calls']): PriceLeg[] {
-  return calls.map((call, index) => {
-    const next = calls[index + 1]
-    const endPrice = next?.entry_price ?? call.current_price
-    const returnPct = call.direction === 'BULL'
-      ? (endPrice - call.entry_price) / call.entry_price
-      : (call.entry_price - endPrice) / call.entry_price
-    return {
-      id: `${call.asset}:${call.direction}:${call.first_pitch_at}`,
-      direction: call.direction,
-      startAt: call.first_pitch_at,
-      endAt: next?.first_pitch_at ?? null,
-      startPrice: call.entry_price,
-      endPrice,
-      returnPct,
-      isCurrent: !next,
-    }
-  })
+function ShareImageCard({ data, rows }: { data: Scorecard; rows: ShareCallRow[] }) {
+  const { user } = data
+  const profileUrl = `${SITE_URL}/u/${encodeURIComponent(user.handle)}`
+  const imageUrl = `/u/${encodeURIComponent(user.handle)}/opengraph-image?v=${SHARE_IMAGE_VERSION}`
+  const shareText = [
+    `${user.name}'s Called It scorecard`,
+    `${formatPct(user.avg_return ?? 0)} avg move · ${Math.round((user.hit_rate ?? 0) * 100)}% hit rate`,
+    rows[0] ? `Best call: ${rows[0].action} ${rows[0].asset} ${formatPct(rows[0].returnPct)}` : null,
+  ].filter(Boolean).join('\n')
+  const xShareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(profileUrl)}`
+
+  return (
+    <section className="share-image-shell" aria-label="Share card">
+      <div className="share-image-copy">
+        <div>
+          <h2>Share card</h2>
+          <p>Top stats and the best 3 calls, built for the X preview.</p>
+        </div>
+        <div className="share-image-actions">
+          <a href={xShareUrl} target="_blank" rel="noreferrer">Share on X</a>
+          <a href={imageUrl} target="_blank" rel="noreferrer">Open image</a>
+        </div>
+      </div>
+      <div className="share-image-card">
+        <div className="share-card-brand">Called It</div>
+        <div className="share-card-main">
+          <div className="share-card-profile">
+            <Avatar src={user.avatar_url} name={user.name} />
+            <div>
+              <h3>{user.name}</h3>
+              <p>@{user.handle} · {formatNumber(user.followers)} followers</p>
+            </div>
+          </div>
+          <div className="share-card-stats">
+            <ShareStat label="Avg move" value={formatPct(user.avg_return ?? 0)} tone={(user.avg_return ?? 0) >= 0 ? 'good' : 'bad'} />
+            <ShareStat label="Median" value={formatPct(user.median_return ?? 0)} tone={(user.median_return ?? 0) >= 0 ? 'good' : 'bad'} />
+            <ShareStat label="Hit rate" value={`${Math.round((user.hit_rate ?? 0) * 100)}%`} />
+            <ShareStat label="Hits" value={`${user.calls_up}/${user.calls_total}`} />
+          </div>
+        </div>
+        <div className="share-card-calls">
+          {rows.length ? rows.map((row, index) => (
+            <div className="share-card-call" key={`${row.asset}-${row.direction}-${row.firstPitchAt}`}>
+              <span className="share-card-rank">#{index + 1}</span>
+              <span className={`share-card-action ${row.direction === 'BEAR' ? 'bear' : 'bull'}`}>{row.action}</span>
+              <b>{row.asset}</b>
+              <strong className={row.returnPct >= 0 ? 'good' : 'bad'}>{formatPct(row.returnPct)}</strong>
+              <small>First mentioned {formatDate(row.firstPitchAt)}</small>
+            </div>
+          )) : (
+            <p className="share-card-empty">No priced calls yet.</p>
+          )}
+        </div>
+      </div>
+    </section>
+  )
 }
 
-function formatDate(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function normalizeTicker(value: string) {
-  return `$${String(value ?? '').replace(/^\$+/, '').trim().toUpperCase()}`
+function ShareStat({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <b className={tone}>{value}</b>
+    </div>
+  )
 }
