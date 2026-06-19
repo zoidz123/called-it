@@ -6,7 +6,7 @@ import { buildAssetRows, formatDate, topShareRows, type Scorecard, type ShareCal
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const alt = 'Called It scorecard share card'
-export const size = { width: 1200, height: 630 }
+export const size = { width: 2400, height: 1260 }
 export const contentType = 'image/png'
 
 const COLORS = {
@@ -24,7 +24,10 @@ export default async function Image({ params }: { params: Promise<{ handle: stri
   const data = await loadScorecard(handle).catch(() => null)
 
   if (!data) {
-    return new ImageResponse(<FallbackCard handle={handle} />, size)
+    return new ImageResponse(<FallbackCard handle={handle} />, {
+      ...size,
+      headers: imageHeaders(handle),
+    })
   }
 
   const rows = topShareRows(buildAssetRows(data), 3)
@@ -32,10 +35,16 @@ export default async function Image({ params }: { params: Promise<{ handle: stri
 
   return new ImageResponse(<ShareCard data={data} rows={rows} avatar={avatar} />, {
     ...size,
-    headers: {
-      'cache-control': 'public, max-age=30, s-maxage=60, stale-while-revalidate=300',
-    },
+    headers: imageHeaders(data.user.handle),
   })
+}
+
+function imageHeaders(handle: string) {
+  const safeHandle = handle.replace(/^@/, '').replace(/[^a-z0-9_-]+/gi, '-').toLowerCase() || 'scorecard'
+  return {
+    'cache-control': 'public, max-age=30, s-maxage=60, stale-while-revalidate=300',
+    'content-disposition': `inline; filename="called-it-${safeHandle}-scorecard-2x.png"`,
+  }
 }
 
 async function loadScorecard(handle: string) {
@@ -133,9 +142,9 @@ function AvatarBlock({ avatar, name }: { avatar: string | null; name: string }) 
     <div style={avatarStyle}>
       {avatar ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={avatar} alt="" width={92} height={92} style={{ width: 92, height: 92, objectFit: 'cover' }} />
+        <img src={avatar} alt="" width={184} height={184} style={{ width: 184, height: 184, objectFit: 'cover' }} />
       ) : (
-        <span style={{ display: 'flex', fontSize: 42, fontWeight: 900 }}>{(name || '?').slice(0, 1).toUpperCase()}</span>
+        <span style={{ display: 'flex', fontSize: 84, fontWeight: 900 }}>{(name || '?').slice(0, 1).toUpperCase()}</span>
       )}
     </div>
   )
@@ -146,7 +155,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'go
   return (
     <div style={statStyle}>
       <span style={statLabelStyle}>{label}</span>
-      <b style={{ display: 'flex', color, fontSize: 28, fontWeight: 900, lineHeight: 1 }}>{value}</b>
+      <b style={{ display: 'flex', color, fontSize: 56, fontWeight: 900, lineHeight: 1 }}>{value}</b>
     </div>
   )
 }
@@ -162,7 +171,7 @@ function CallRow({ index, row }: { index: number; row: ShareCallRow }) {
         backgroundColor: row.direction === 'BEAR' ? '#fde8e5' : '#e1f7e9',
       }}>{row.action}</div>
       <div style={tickerStyle}>{row.asset}</div>
-      <div style={{ display: 'flex', marginLeft: 'auto', color: toneColor, fontSize: 36, fontWeight: 900 }}>
+      <div style={{ display: 'flex', marginLeft: 'auto', color: toneColor, fontSize: 72, fontWeight: 900 }}>
         {formatPct(row.returnPct)}
       </div>
       <div style={dateStyle}>First mentioned {formatDate(row.firstPitchAt)}</div>
@@ -178,7 +187,7 @@ const rootStyle = {
   width: '100%',
   height: '100%',
   display: 'flex',
-  padding: 28,
+  padding: 56,
   backgroundColor: COLORS.yellow,
   color: COLORS.ink,
   fontFamily: 'Arial, Helvetica, sans-serif',
@@ -189,26 +198,26 @@ const frameStyle = {
   height: '100%',
   display: 'flex',
   flexDirection: 'column',
-  padding: '26px 38px 22px',
-  border: `8px solid ${COLORS.ink}`,
-  borderRadius: 30,
+  padding: '52px 76px 44px',
+  border: `16px solid ${COLORS.ink}`,
+  borderRadius: 60,
   backgroundColor: COLORS.paper,
-  boxShadow: `10px 12px 0 ${COLORS.ink}`,
+  boxShadow: `20px 24px 0 ${COLORS.ink}`,
 } as const
 
 const topRowStyle = {
   display: 'flex',
   alignItems: 'center',
-  gap: 22,
+  gap: 44,
 } as const
 
 const brandStyle = {
   display: 'flex',
-  padding: '8px 18px 6px',
-  border: `5px solid ${COLORS.ink}`,
-  borderRadius: 12,
+  padding: '16px 36px 12px',
+  border: `10px solid ${COLORS.ink}`,
+  borderRadius: 24,
   backgroundColor: COLORS.paper,
-  fontSize: 38,
+  fontSize: 76,
   fontWeight: 900,
   lineHeight: 1,
 } as const
@@ -216,37 +225,37 @@ const brandStyle = {
 const taglineStyle = {
   display: 'flex',
   color: COLORS.muted,
-  fontSize: 21,
+  fontSize: 42,
   fontWeight: 900,
 } as const
 
 const profileRowStyle = {
   display: 'flex',
   alignItems: 'center',
-  gap: 18,
-  marginTop: 20,
-  padding: 14,
-  border: `4px solid ${COLORS.ink}`,
-  borderRadius: 18,
+  gap: 36,
+  marginTop: 40,
+  padding: 28,
+  border: `8px solid ${COLORS.ink}`,
+  borderRadius: 36,
   backgroundColor: COLORS.paperSoft,
 } as const
 
 const avatarStyle = {
-  width: 92,
-  height: 92,
+  width: 184,
+  height: 184,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   overflow: 'hidden',
-  border: `4px solid ${COLORS.ink}`,
-  borderRadius: 16,
+  border: `8px solid ${COLORS.ink}`,
+  borderRadius: 32,
   backgroundColor: COLORS.paper,
   flexShrink: 0,
 } as const
 
 const nameStyle = {
   display: 'flex',
-  fontSize: 42,
+  fontSize: 84,
   fontWeight: 900,
   lineHeight: 1,
   whiteSpace: 'nowrap',
@@ -254,18 +263,18 @@ const nameStyle = {
 
 const handleStyle = {
   display: 'flex',
-  marginTop: 7,
+  marginTop: 14,
   color: COLORS.muted,
-  fontSize: 21,
+  fontSize: 42,
   fontWeight: 900,
 } as const
 
 const statsGridStyle = {
   display: 'flex',
-  width: 438,
-  height: 92,
-  border: `3px solid ${COLORS.ink}`,
-  borderRadius: 14,
+  width: 876,
+  height: 184,
+  border: `6px solid ${COLORS.ink}`,
+  borderRadius: 28,
   overflow: 'hidden',
   backgroundColor: COLORS.paper,
   flexShrink: 0,
@@ -277,14 +286,14 @@ const statStyle = {
   justifyContent: 'center',
   alignItems: 'center',
   width: '25%',
-  borderRight: `1px solid rgba(24,24,24,.24)`,
-  gap: 7,
+  borderRight: `2px solid rgba(24,24,24,.24)`,
+  gap: 14,
 } as const
 
 const statLabelStyle = {
   display: 'flex',
   color: COLORS.muted,
-  fontSize: 13,
+  fontSize: 26,
   fontWeight: 900,
   textTransform: 'uppercase',
 } as const
@@ -292,18 +301,18 @@ const statLabelStyle = {
 const callsWrapStyle = {
   display: 'flex',
   flexDirection: 'column',
-  marginTop: 16,
-  border: `4px solid ${COLORS.ink}`,
-  borderRadius: 18,
+  marginTop: 32,
+  border: `8px solid ${COLORS.ink}`,
+  borderRadius: 36,
   overflow: 'hidden',
 } as const
 
 const callsHeaderStyle = {
   display: 'flex',
-  padding: '10px 18px',
+  padding: '20px 36px',
   backgroundColor: COLORS.ink,
   color: COLORS.paper,
-  fontSize: 22,
+  fontSize: 44,
   fontWeight: 900,
 } as const
 
@@ -314,37 +323,37 @@ const callsListStyle = {
 } as const
 
 const callRowStyle = {
-  height: 68,
+  height: 136,
   display: 'flex',
   alignItems: 'center',
-  gap: 14,
-  padding: '0 18px',
-  borderTop: `2px solid rgba(24,24,24,.18)`,
+  gap: 28,
+  padding: '0 36px',
+  borderTop: `4px solid rgba(24,24,24,.18)`,
 } as const
 
 const rankStyle = {
-  width: 48,
-  height: 38,
+  width: 96,
+  height: 76,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  border: `3px solid ${COLORS.ink}`,
-  borderRadius: 10,
+  border: `6px solid ${COLORS.ink}`,
+  borderRadius: 20,
   backgroundColor: COLORS.yellow,
-  fontSize: 19,
+  fontSize: 38,
   fontWeight: 900,
   flexShrink: 0,
 } as const
 
 const actionStyle = {
-  minWidth: 70,
-  height: 32,
+  minWidth: 140,
+  height: 64,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  border: `3px solid currentColor`,
-  borderRadius: 8,
-  fontSize: 17,
+  border: `6px solid currentColor`,
+  borderRadius: 16,
+  fontSize: 34,
   fontWeight: 900,
   flexShrink: 0,
 } as const
@@ -352,17 +361,17 @@ const actionStyle = {
 const tickerStyle = {
   display: 'flex',
   color: COLORS.green,
-  fontSize: 29,
+  fontSize: 58,
   fontWeight: 900,
-  minWidth: 126,
+  minWidth: 252,
 } as const
 
 const dateStyle = {
-  width: 238,
+  width: 476,
   display: 'flex',
   justifyContent: 'flex-end',
   color: COLORS.muted,
-  fontSize: 17,
+  fontSize: 34,
   fontWeight: 900,
   textAlign: 'right',
   flexShrink: 0,
@@ -370,9 +379,9 @@ const dateStyle = {
 
 const emptyStyle = {
   display: 'flex',
-  padding: 28,
+  padding: 56,
   color: COLORS.muted,
-  fontSize: 25,
+  fontSize: 50,
   fontWeight: 900,
 } as const
 
@@ -381,6 +390,6 @@ const footerStyle = {
   marginTop: 'auto',
   justifyContent: 'flex-end',
   color: COLORS.muted,
-  fontSize: 16,
+  fontSize: 32,
   fontWeight: 900,
 } as const

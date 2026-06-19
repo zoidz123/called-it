@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ handle: s
       title,
       description,
       type: 'profile',
-      images: [{ url: image, width: 1200, height: 630, alt: `${title} share card` }],
+      images: [{ url: image, width: 2400, height: 1260, alt: `${title} share card` }],
     },
     twitter: {
       card: 'summary_large_image',
@@ -92,7 +92,7 @@ function ShareImageCard({ data, rows }: { data: Scorecard; rows: ShareCallRow[] 
         </div>
         <div className="share-image-actions">
           <a href={xShareUrl} target="_blank" rel="noreferrer">Share on X</a>
-          <a href={imageUrl} target="_blank" rel="noreferrer">Open image</a>
+          <a href={imageUrl} download={`called-it-${user.handle}-scorecard-2x.png`}>Download image</a>
         </div>
       </div>
       <div className="share-image-card">
