@@ -28,8 +28,9 @@ export function dayKey(date: string | Date): string {
 
 async function yahooPrices(symbol: string, date: string) {
   const day = dayKey(date)
-  const start = Date.parse(`${day}T00:00:00.000Z`)
-  const end = Math.max(Date.now() + 24 * 60 * 60 * 1000, start + 14 * 24 * 60 * 60 * 1000)
+  const pitchDayStart = Date.parse(`${day}T00:00:00.000Z`)
+  const start = pitchDayStart - 10 * 24 * 60 * 60 * 1000
+  const end = Math.max(Date.now() + 24 * 60 * 60 * 1000, pitchDayStart + 14 * 24 * 60 * 60 * 1000)
   const response = await fetch(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${Math.floor(start / 1000)}&period2=${Math.floor(end / 1000)}&interval=1d&events=history`,
     { headers: yahooHeaders() },
@@ -44,7 +45,11 @@ async function yahooPrices(symbol: string, date: string) {
   const rows = timestamps
     .map((timestamp: number, index: number) => ({ timestamp, close: Number(closes[index]) }))
     .filter((row: { timestamp: number; close: number }) => Number.isFinite(row.close) && row.close > 0)
-  const entryRow = rows.find((row: { timestamp: number }) => row.timestamp * 1000 >= start) ?? rows[0]
+  // Yahoo's daily bars only give us OHLC at day granularity. Use the previous
+  // trading close as the entry baseline so same-day moves are not scored 0%.
+  const entryRow = rows.findLast((row: { timestamp: number }) => row.timestamp * 1000 < pitchDayStart)
+    ?? rows.find((row: { timestamp: number }) => row.timestamp * 1000 >= pitchDayStart)
+    ?? rows[0]
   const currentRow = rows.at(-1)
   if (!entryRow || !currentRow) return null
   return {
