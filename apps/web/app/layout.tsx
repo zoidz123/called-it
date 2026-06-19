@@ -21,8 +21,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: ogImage,
-        width: 1200,
-        height: 630,
+        width: 1731,
+        height: 909,
         alt: 'Called It - Find the traders who spotted the move early.',
       },
     ],
