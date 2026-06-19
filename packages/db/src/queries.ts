@@ -57,7 +57,10 @@ export async function findActiveScanJob(handle: string, jobType?: 'full_scan' | 
 export async function claimNextScanJob(workerId: string) {
   return withTransaction(async (client) => {
     const { rows } = await client.query(
-      `SELECT * FROM scan_jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`,
+      `SELECT * FROM scan_jobs
+       WHERE status = 'pending'
+       ORDER BY CASE WHEN job_type = 'full_scan' THEN 0 ELSE 1 END, created_at ASC
+       LIMIT 1 FOR UPDATE SKIP LOCKED`,
     )
     if (!rows[0]) return null
     const updated = await client.query(
