@@ -7,3 +7,7 @@ node_modules/
 apps/web/.next/
 .next/
 .vercel
+
+# Local runtime / tooling artifacts
+*.pid
+.lavish/
