@@ -1,0 +1,9 @@
+[
+  {
+    "id": "1000000000000000001",
+    "text": "$BTC looks strong from here",
+    "createdAt": "Thu Jul 16 12:00:00 +0000 2026",
+    "author": { "id": "42", "username": "fixture_alpha", "name": "Fixture Alpha" },
+    "conversationId": "1000000000000000001"
+  }
+]

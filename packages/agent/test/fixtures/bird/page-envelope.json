@@ -1,0 +1,25 @@
+{
+  "tweets": [
+    {
+      "id": "1000000000000000002",
+      "text": "Quote context with $ETH",
+      "createdAt": "2026-07-15T12:00:00Z",
+      "username": "fixture_alpha",
+      "quotedTweet": { "id": "900" }
+    },
+    {
+      "id": "1000000000000000003",
+      "text": "reply with $SOL",
+      "createdAt": "2026-07-14T12:00:00Z",
+      "username": "fixture_alpha",
+      "inReplyToStatusId": "899"
+    },
+    {
+      "id": "1000000000000000004",
+      "text": "RT @someone old $DOGE view",
+      "createdAt": "2026-07-13T12:00:00Z",
+      "username": "fixture_alpha"
+    }
+  ],
+  "nextCursor": "synthetic-cursor-page-2"
+}

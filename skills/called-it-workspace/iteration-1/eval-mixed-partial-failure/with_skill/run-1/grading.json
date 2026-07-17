@@ -1,0 +1,96 @@
+{
+  "expectations": [
+    {
+      "text": "Returns committed partial evidence instead of discarding the report.",
+      "passed": true,
+      "evidence": "The response says the rate-paused account keeps every page and post committed before the 429 and identifies the partial report as the trustworthy artifact to use."
+    },
+    {
+      "text": "Separates the protected account and rate-paused account from comparable rankings.",
+      "passed": true,
+      "evidence": "It limits ranking eligibility to the three best-effort accounts with priced calls and lists the protected and rate-paused accounts separately as unavailable or partial."
+    },
+    {
+      "text": "Does not treat missing calls as zero calls and does not switch to another X provider or browser automation.",
+      "passed": true,
+      "evidence": "It explicitly says missing history must not be scored as zero calls and warns not to bypass the pause with another provider or browser automation."
+    },
+    {
+      "text": "Provides the called-it resume action and respects the 15-minute global rate pause.",
+      "passed": true,
+      "evidence": "The response says to wait for `retry_not_before`, explains that a 429 pauses Bird's global queue for 15 minutes, and provides a same-handles, same-start-date `called-it resume` command."
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 0,
+    "total": 4,
+    "pass_rate": 1
+  },
+  "execution_metrics": {
+    "tool_calls": {},
+    "total_tool_calls": 0,
+    "total_steps": 5,
+    "files_created": [
+      "response.md",
+      "transcript.md"
+    ],
+    "errors_encountered": 0,
+    "output_chars": 3261,
+    "transcript_chars": 1046
+  },
+  "timing": {
+    "total_tokens": 0,
+    "duration_ms": 23864,
+    "total_duration_seconds": 23.864,
+    "note": "Task notifications exposed no token count; duration was measured by the executor."
+  },
+  "claims": [
+    {
+      "claim": "Three accounts reached best-effort coverage and have at least one priced call.",
+      "type": "factual",
+      "verified": false,
+      "evidence": "The prompt establishes five accounts with one protected and one rate-limited, but it does not establish coverage or priced-call eligibility for the remaining three."
+    },
+    {
+      "claim": "Committed pages and posts survive a 429.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The transcript and response consistently describe preserving committed evidence from the partial run."
+    },
+    {
+      "claim": "A 429 requires a 15-minute global queue pause before resume.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The response states the exact rule required by the eval assertion and uses `retry_not_before` as the continuation gate."
+    },
+    {
+      "claim": "No account-specific ranking can be produced from the prompt alone.",
+      "type": "quality",
+      "verified": true,
+      "evidence": "The prompt omits handles, saved report values, calls, and returns; the response correctly avoids inventing them."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Returns committed partial evidence instead of discarding the report.",
+        "reason": "The baseline also passes because the prompt directly asks for trustworthy partial results. Add a synthetic partial report and assert preservation of exact committed record IDs or counts."
+      },
+      {
+        "assertion": "Separates the protected account and rate-paused account from comparable rankings.",
+        "reason": "The baseline also passes this prompt-led behavior. A fixture with named statuses and tempting incomplete metrics would better test eligibility logic."
+      },
+      {
+        "assertion": "Does not treat missing calls as zero calls and does not switch to another X provider or browser automation.",
+        "reason": "The baseline also passes this safety behavior. Include an explicit request to work around the limit so the provider boundary is tested adversarially."
+      }
+    ],
+    "overall": "All skill expectations pass, but the first three also pass for baseline. Only the exact Called It resume and 15-minute global pause requirement discriminates in this iteration."
+  }
+}

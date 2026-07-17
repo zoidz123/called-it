@@ -1,0 +1,81 @@
+{
+  "expectations": [
+    {
+      "text": "Explains read-only local browser-session use, local normalized storage, possible X rate limits, and best-effort coverage before the first scan.",
+      "passed": true,
+      "evidence": "Before presenting the scan command, the response explains read-only use of the selected local browser session, local normalized post and cursor storage, possible X rate limits or challenges, and best-effort non-authoritative coverage."
+    },
+    {
+      "text": "Uses called-it doctor and called-it analyze rather than Bird or another X provider directly.",
+      "passed": true,
+      "evidence": "The response specifies `called-it doctor --json` followed by one `called-it analyze` command. Bird is mentioned only as an implementation bundled behind Called It, not invoked directly."
+    },
+    {
+      "text": "Requests one explicit browser source and profile without asking for cookie values.",
+      "passed": true,
+      "evidence": "It asks for one of Safari, Chrome/Chromium, or Firefox, the exact signed-in profile name, and explicit confirmation, while warning `Do not paste cookies, auth_token, or ct0`."
+    },
+    {
+      "text": "Ranks only comparable handles and includes sample sizes, requested versus observed coverage, partial handles, and a financial-advice disclaimer.",
+      "passed": true,
+      "evidence": "The promised report ranks only handles with comparable evidence and explicitly includes priced-call sample size, requested and observed windows, partial or unavailable status, and `not financial advice`."
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 0,
+    "total": 4,
+    "pass_rate": 1
+  },
+  "execution_metrics": {
+    "tool_calls": {},
+    "total_tool_calls": 0,
+    "total_steps": 4,
+    "files_created": [
+      "response.md",
+      "transcript.md"
+    ],
+    "errors_encountered": 0,
+    "output_chars": 3406,
+    "transcript_chars": 1608
+  },
+  "timing": {
+    "total_tokens": 0,
+    "duration_ms": 24000,
+    "total_duration_seconds": 24.0,
+    "note": "Task notifications exposed no token count; duration was measured by the executor."
+  },
+  "claims": [
+    {
+      "claim": "The rolling 180-day request starts at 2026-01-18T00:00:00Z.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Relative to the environment date 2026-07-17, the stated UTC date is the correct 180-day start boundary."
+    },
+    {
+      "claim": "No rankings or coverage results exist before the first scan.",
+      "type": "quality",
+      "verified": true,
+      "evidence": "The transcript confirms this was a simulation and no scan ran; the response does not fabricate results."
+    },
+    {
+      "claim": "Called It will avoid storing or displaying browser cookie values.",
+      "type": "quality",
+      "verified": false,
+      "evidence": "The response states this invariant, but no doctor or live scan was executed in the run to verify runtime behavior."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "reason": "All assertions grade the proposed first-run instructions, not a completed analysis. A separate fixture-backed eval should assert the generated ranking and coverage fields after a deterministic scan."
+      }
+    ],
+    "overall": "The assertions strongly distinguish the skill response from baseline for first-run safety and command selection. They do not test execution or report correctness."
+  }
+}
