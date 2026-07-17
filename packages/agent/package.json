@@ -1,36 +1,39 @@
 {
   "name": "@called-it/agent",
   "version": "0.1.0",
-  "private": true,
+  "description": "Install the Called It local evidence agent and skill for Codex or Claude Code.",
+  "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
-    "called-it": "./src/cli.ts"
+    "called-it": "./dist/bootstrap.mjs"
   },
   "exports": {
-    ".": "./src/index.ts"
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
-    "src",
-    "third_party_licenses"
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "bundle:bird": "bun run scripts/bundle-bird.ts",
+    "build:distribution": "bun run scripts/build-distribution.ts",
+    "prepack": "bun run build:distribution && bun run verify:distribution",
     "test": "bun test",
+    "test:distribution": "bun test test/distribution.test.ts",
     "test:e2e": "bun test test/e2e.test.ts",
-    "typecheck": "bunx tsc --noEmit -p tsconfig.json"
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json",
+    "verify:distribution": "node dist/bootstrap.mjs verify-package"
   },
-  "dependencies": {
-    "@called-it/core": "workspace:*",
-    "@steipete/bird": "0.8.0",
-    "zod": "^4.4.3"
-  },
-  "bundledDependencies": [
-    "@steipete/bird",
-    "@steipete/sweet-cookie"
-  ],
   "calledItBundledLicenses": [
-    "third_party_licenses/BIRD-MIT.txt",
-    "third_party_licenses/SWEET-COOKIE-MIT.txt"
+    "dist/licenses/CALLED-IT-MIT.txt",
+    "dist/licenses/BIRD-MIT.txt",
+    "dist/licenses/SWEET-COOKIE-MIT.txt"
   ]
 }

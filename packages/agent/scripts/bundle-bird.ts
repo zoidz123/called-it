@@ -17,7 +17,9 @@ const sweetCookieMetadata = await sweetCookiePackage.json()
 if (birdMetadata.version !== '0.8.0') throw new Error(`Expected @steipete/bird 0.8.0, found ${birdMetadata.version}`)
 if (sweetCookieMetadata.version !== '0.1.0') throw new Error(`Expected @steipete/sweet-cookie 0.1.0, found ${sweetCookieMetadata.version}`)
 
-await rm(dist, { recursive: true, force: true })
+await rm(join(dist, 'bird.mjs'), { force: true })
+await rm(join(dist, 'bird-manifest.json'), { force: true })
+await rm(join(dist, 'licenses'), { recursive: true, force: true })
 await mkdir(join(dist, 'licenses'), { recursive: true })
 const entry = join(birdRoot, 'dist/cli.js')
 const result = await Bun.build({
@@ -28,7 +30,7 @@ const result = await Bun.build({
   naming: 'bird.mjs',
   minify: false,
   sourcemap: 'none',
-  define: { __dirname: 'undefined' },
+  define: { __dirname: 'undefined', 'process.env.NODE_ENV': '"production"' },
 })
 if (!result.success) throw new Error(result.logs.map((log) => log.message).join('\n'))
 
