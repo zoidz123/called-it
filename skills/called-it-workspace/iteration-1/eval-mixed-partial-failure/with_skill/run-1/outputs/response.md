@@ -1,5 +1,8 @@
 I can safely return the committed partial evidence now, but I would not rank all five accounts together.
 
+If the partial scan returns `needs_host_classification`, I will classify only the committed request candidates with this coding harness, write the constrained private response, and run `called-it report`.
+No model API key or provider fallback is required.
+
 - The three accounts that reached `best_effort` coverage and have at least one priced call are the only accounts eligible for the comparable ranking.
 - The protected account is unavailable and must be listed separately.
 - The rate-paused account keeps every page and post committed before the 429, but its coverage is partial, so it must also be listed separately rather than scored as though the missing history contained zero calls.

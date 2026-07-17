@@ -4,7 +4,7 @@
   "prompt": "Compare @alpha_macro, @beta_bits, @chart_clara, @deltafund and @equity_ed over the last 180 days. Rank how reliable their calls were, show the strongest and weakest calls, and be honest if X did not return the whole window. I have never run Called It locally before.",
   "assertions": [
     "Explains read-only local browser-session use, local normalized storage, possible X rate limits, and best-effort coverage before the first scan.",
-    "Uses called-it doctor and called-it analyze rather than Bird or another X provider directly.",
+    "Uses called-it doctor and called-it analyze, then handles needs_host_classification with the constrained host response and called-it report instead of requesting an API key.",
     "Requests one explicit browser source and profile without asking for cookie values.",
     "Ranks only comparable handles and includes sample sizes, requested versus observed coverage, partial handles, and a financial-advice disclaimer."
   ]

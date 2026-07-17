@@ -23,6 +23,10 @@ After that confirmation, I will run the five accounts together with:
 called-it analyze @alpha_macro @beta_bits @chart_clara @deltafund @equity_ed --since 2026-01-18T00:00:00Z --confirm-browser-access
 ```
 
+If the CLI returns `needs_host_classification`, I will use this coding harness to review every private request candidate under the Called It rubric, write the constrained response with mode `0600`, and run the returned `called-it report` command.
+This uses no OpenAI, Claude, or other model API key.
+The package, rather than the model, will validate the handoff and calculate prices, returns, coverage, and rankings.
+
 The final comparison will rank only handles with comparable evidence.
 For every handle, it will show priced-call sample size, hit rate, average and median direction-adjusted return, strongest and weakest calls, requested versus observed windows, Bird coverage state, retries, notable comments, and any partial or unavailable status.
 Missing calls from incomplete X coverage will not be counted as zero calls.

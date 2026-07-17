@@ -16,9 +16,9 @@
       "evidence": "Neither artifact contains a cursor or cookie value. The transcript explicitly records that credentials, cookies, cursors, and secrets were not accessed."
     },
     {
-      "text": "Names the resulting coverage and scan-result fields needed to explain new work and refuses to invent page, post, or retry counts before the resume result exists.",
+      "text": "Names the resulting coverage and scan-result fields needed to explain new work, uses the host classification handoff without an API key when requested, and refuses to invent counts before the result exists.",
       "passed": true,
-      "evidence": "The response names `coverage` and `scanResults`, then lists committed pages, committed posts, retries, stop reason, requested and observed windows, and coverage status. It explicitly refuses to invent page, post, or retry counts because the resume was not executed."
+      "evidence": "The response names coverage and scanResults, lists the exact accounting fields, describes the no-key host-classification handoff if requested, and refuses to invent page, post, or retry counts because resume was not executed."
     }
   ],
   "summary": {

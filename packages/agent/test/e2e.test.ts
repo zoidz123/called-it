@@ -34,7 +34,7 @@ describe('temporary-XDG end to end', () => {
     await interrupted.exited
 
     const resume = run(fixture, ['resume', '@fixture_alpha', '--since', '2026-01-01', '--allow-unpinned-bird', '--page-delay-ms', '1000'])
-    expect(resume.exitCode).toBe(0)
+    expect(resume.exitCode, resume.stderr).toBe(0)
     const result = JSON.parse(resume.stdout)
     expect(result.partial).toBe(false)
     expect(readFileSync(result.markdownPath, 'utf8')).toContain('Requested window')
@@ -52,9 +52,41 @@ describe('temporary-XDG end to end', () => {
     const fixture = makeFixture()
     run(fixture, ['setup', '--cookie-source', 'firefox', '--profile', 'fixture-release'])
     const result = run(fixture, ['analyze', '@fixture_alpha', '--since', '2026-01-01', '--confirm-browser-access', '--allow-unpinned-bird'], { FAKE_BIRD_RATE: '1' })
-    expect(result.exitCode).toBe(2)
+    expect(result.exitCode, result.stderr).toBe(2)
     expect(result.stdout).toContain('"partial": true')
     expect(result.stderr).toContain('bird_rate_paused')
+    assertNoSecrets([join(fixture.config, 'called-it'), join(fixture.data, 'called-it')])
+  })
+
+  test('uses a host classification response without an API key', () => {
+    const fixture = makeFixture()
+    run(fixture, ['setup', '--cookie-source', 'chrome', '--profile', 'Fixture Profile'])
+    const analyzed = run(
+      fixture,
+      ['analyze', '@fixture_alpha', '--since', '2026-01-01', '--confirm-browser-access', '--allow-unpinned-bird', '--page-delay-ms', '1000'],
+      { FAKE_BIRD_CASHTAG: '1', OPENAI_API_KEY: '' },
+    )
+    expect(analyzed.exitCode, analyzed.stderr).toBe(0)
+    const handoff = JSON.parse(analyzed.stdout)
+    expect(handoff).toMatchObject({ status: 'needs_host_classification', candidateCount: 1 })
+    const request = JSON.parse(readFileSync(handoff.classificationRequestPath, 'utf8'))
+    writeFileSync(handoff.classificationResponsePath, `${JSON.stringify({
+      schemaVersion: 1,
+      requestId: request.requestId,
+      reviewedCandidateCount: request.candidates.length,
+      results: [],
+    }, null, 2)}\n`, { mode: 0o600 })
+
+    const reported = run(
+      fixture,
+      ['report', '--request', handoff.classificationRequestPath, '--classifications', handoff.classificationResponsePath],
+      { OPENAI_API_KEY: '' },
+    )
+    expect(reported.exitCode).toBe(0)
+    const result = JSON.parse(reported.stdout)
+    expect(readFileSync(result.markdownPath, 'utf8')).toContain('No priced calls in observed evidence.')
+    expect(statSync(handoff.classificationRequestPath).mode & 0o777).toBe(0o600)
+    expect(statSync(handoff.classificationResponsePath).mode & 0o777).toBe(0o600)
     assertNoSecrets([join(fixture.config, 'called-it'), join(fixture.data, 'called-it')])
   })
 })
@@ -72,7 +104,8 @@ if (args.includes('user-tweets')) {
   if (process.env.FAKE_BIRD_RATE === '1') { console.error('HTTP 429 Too Many Requests'); process.exit(1) }
   const cursorAt = args.indexOf('--cursor')
   if (cursorAt < 0) {
-    console.log(JSON.stringify({tweets:[{id:'10001',text:'synthetic post without a cashtag',createdAt:'2026-07-15T12:00:00.000Z',username:'fixture_alpha'}],nextCursor:'fixture-cursor-2'}))
+    const text = process.env.FAKE_BIRD_CASHTAG === '1' ? '$BTC looks interesting' : 'synthetic post without a cashtag'
+    console.log(JSON.stringify({tweets:[{id:'10001',text,createdAt:'2026-07-15T12:00:00.000Z',username:'fixture_alpha'}],nextCursor:'fixture-cursor-2'}))
     process.exit(0)
   }
   const finish = () => console.log(JSON.stringify({tweets:[{id:'10002',text:'another synthetic post',createdAt:'2025-12-20T12:00:00.000Z',username:'fixture_alpha'}]}))

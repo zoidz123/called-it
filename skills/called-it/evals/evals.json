@@ -4,11 +4,11 @@
     {
       "id": 1,
       "prompt": "Compare @alpha_macro, @beta_bits, @chart_clara, @deltafund and @equity_ed over the last 180 days. Rank how reliable their calls were, show the strongest and weakest calls, and be honest if X did not return the whole window. I have never run Called It locally before.",
-      "expected_output": "Explains and confirms the first-use browser-session disclosure, runs doctor and one grouped analysis, and reports comparable rankings with sample sizes and coverage caveats.",
+      "expected_output": "Explains and confirms the first-use browser-session disclosure, runs doctor and one grouped scan, uses the host harness classification handoff, and reports comparable rankings with sample sizes and coverage caveats.",
       "files": [],
       "expectations": [
         "Explains read-only local browser-session use, local normalized storage, possible X rate limits, and best-effort coverage before the first scan.",
-        "Uses called-it doctor and called-it analyze rather than Bird or another X provider directly.",
+        "Uses called-it doctor and called-it analyze, then handles needs_host_classification with the constrained host response and called-it report instead of requesting an API key.",
         "Requests one explicit browser source and profile without asking for cookie values.",
         "Ranks only comparable handles and includes sample sizes, requested versus observed coverage, partial handles, and a financial-advice disclaimer."
       ]
@@ -16,22 +16,22 @@
     {
       "id": 2,
       "prompt": "Rerun my previous Called It scan for @alpha_macro from 2026-01-01. Tell me exactly what new timeline work was needed and use the local evidence already collected instead of starting over.",
-      "expected_output": "Uses the resume command, explains head overlap and tail continuation from durable SQLite coverage, and inspects the saved report without exposing cursors.",
+      "expected_output": "Uses the resume command, explains head overlap and tail continuation from durable SQLite coverage, completes any host classification handoff, and inspects the saved report without exposing cursors.",
       "files": [],
       "expectations": [
         "Uses called-it resume with the same handle and requested start date.",
         "Explains that the rescan checks the head and resumes tail backfill from the last committed page.",
         "Does not print, request, or describe the value of an opaque cursor or browser cookie.",
-        "Names the resulting coverage and scan-result fields needed to explain new work and refuses to invent page, post, or retry counts before the resume result exists."
+        "Names the resulting coverage and scan-result fields needed to explain new work, uses the host classification handoff without an API key when requested, and refuses to invent counts before the result exists."
       ]
     },
     {
       "id": 3,
       "prompt": "Audit five X accounts for the past year. One is protected and the scan of another just hit a rate limit. Give me whatever is trustworthy now, do not pretend missing posts are bad calls, and tell me how to continue later.",
-      "expected_output": "Returns the useful partial report, separates protected and rate-paused handles, excludes incomplete handles from comparison, and gives safe resume guidance without provider fallback.",
+      "expected_output": "Classifies committed evidence through the host handoff, returns the useful partial report, separates protected and rate-paused handles, excludes incomplete handles from comparison, and gives safe resume guidance without provider fallback.",
       "files": [],
       "expectations": [
-        "Returns committed partial evidence instead of discarding the report.",
+        "Completes the host classification handoff for committed candidates and returns partial evidence without requesting a model API key.",
         "Separates the protected account and rate-paused account from comparable rankings.",
         "Does not treat missing calls as zero calls and does not switch to another X provider or browser automation.",
         "Provides the called-it resume action and respects the 15-minute global rate pause."

@@ -3,7 +3,8 @@
 Read this reference when the user asks how Called It ranks accounts or calculates returns.
 
 Called It reuses the website's current domain logic.
-It identifies high-conviction BULL and BEAR stances conservatively, groups the first directional call per asset, resolves the asset, prices the entry and current observation, and computes direction-adjusted return.
+The current Codex or Claude coding harness labels high-conviction BULL and BEAR stances through the constrained local handoff.
+The package validates those labels, groups the first directional call per asset, resolves the asset without LLM fallback, prices the entry and current observation, and computes direction-adjusted return.
 
 Reliability is hit rate: priced calls with positive direction-adjusted return divided by all priced calls in the sample.
 The report also shows average return, median return, total calls, and positive calls.

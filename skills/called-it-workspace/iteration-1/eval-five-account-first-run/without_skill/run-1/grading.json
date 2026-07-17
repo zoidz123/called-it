@@ -6,9 +6,9 @@
       "evidence": "The response mentions future installation or authentication and partial X coverage, but does not disclose read-only local browser-session use, normalized local storage, or rate-limit behavior before a scan."
     },
     {
-      "text": "Uses called-it doctor and called-it analyze rather than Bird or another X provider directly.",
+      "text": "Uses called-it doctor and called-it analyze, then handles needs_host_classification with the constrained host response and called-it report instead of requesting an API key.",
       "passed": false,
-      "evidence": "No `called-it doctor` or `called-it analyze` command is named or used."
+      "evidence": "No called-it doctor, analyze, host-classification handoff, or report command is named or used."
     },
     {
       "text": "Requests one explicit browser source and profile without asking for cookie values.",

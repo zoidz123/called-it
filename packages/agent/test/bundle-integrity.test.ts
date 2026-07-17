@@ -29,7 +29,9 @@ test('local agent source has no official or paid X provider implementation', () 
   const files = walk(join(packageRoot, 'src'))
   const source = files.map((file) => readFileSync(file, 'utf8')).join('\n')
   expect(source).not.toMatch(/TWITTERAPI_IO|twitterapi\.io|api\.twitter\.com|generic provider/i)
+  expect(source).not.toMatch(/OPENAI_API_KEY|api\.openai\.com|classifyCandidates/)
   expect(source).not.toMatch(/playwright|puppeteer|selenium/i)
+  expect(source).toContain('allowLlmAssetResolution: false')
 })
 
 function walk(directory: string): string[] {

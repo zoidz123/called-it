@@ -3,7 +3,7 @@
   "eval_name": "mixed-partial-failure",
   "prompt": "Audit five X accounts for the past year. One is protected and the scan of another just hit a rate limit. Give me whatever is trustworthy now, do not pretend missing posts are bad calls, and tell me how to continue later.",
   "assertions": [
-    "Returns committed partial evidence instead of discarding the report.",
+    "Completes the host classification handoff for committed candidates and returns partial evidence without requesting a model API key.",
     "Separates the protected account and rate-paused account from comparable rankings.",
     "Does not treat missing calls as zero calls and does not switch to another X provider or browser automation.",
     "Provides the called-it resume action and respects the 15-minute global rate pause."

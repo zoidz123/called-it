@@ -4,6 +4,8 @@ I would resume the saved scan with the same handle and requested UTC start date:
 called-it resume @alpha_macro --since 2026-01-01
 ```
 
+If resume returns `needs_host_classification`, I will classify the request with this coding harness, write the schema-conforming private response, and run the returned `called-it report` command without requesting a model API key.
+
 This reuses the durable local evidence ledger instead of starting a fresh scan.
 The new timeline work is limited to checking the current head until it finds known-post overlap, then continuing older tail backfill from the last committed cursor.
 

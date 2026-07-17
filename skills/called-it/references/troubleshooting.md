@@ -2,6 +2,13 @@
 
 Read this reference when doctor or analysis returns a partial state.
 
+## Host classification handoff
+
+If `analyze` returns `needs_host_classification`, read the request and follow the classification reference.
+Write the response to the returned path with mode `0600`, then run the returned `called-it report` command.
+Do not request `OPENAI_API_KEY`, a Claude API key, or any other model credential.
+Use the reasoning capability of the current coding harness.
+
 ## Authentication or cookie permission
 
 Ask the user to log into x.com in the exact configured browser profile, close browser database writers if required, and rerun `called-it doctor --json`.

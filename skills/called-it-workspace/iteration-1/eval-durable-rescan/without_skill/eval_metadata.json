@@ -6,6 +6,6 @@
     "Uses called-it resume with the same handle and requested start date.",
     "Explains that the rescan checks the head and resumes tail backfill from the last committed page.",
     "Does not print, request, or describe the value of an opaque cursor or browser cookie.",
-    "Names the resulting coverage and scan-result fields needed to explain new work and refuses to invent page, post, or retry counts before the resume result exists."
+    "Names the resulting coverage and scan-result fields needed to explain new work, uses the host classification handoff without an API key when requested, and refuses to invent counts before the result exists."
   ]
 }

@@ -1,9 +1,9 @@
 {
   "expectations": [
     {
-      "text": "Returns committed partial evidence instead of discarding the report.",
-      "passed": true,
-      "evidence": "The response says retrieved findings can be reported and scored, directs preserving completed scan results, and keeps the retrieved rate-limited portion usable."
+      "text": "Completes the host classification handoff for committed candidates and returns partial evidence without requesting a model API key.",
+      "passed": false,
+      "evidence": "The response preserves completed scan results, but it does not complete or describe the required no-key host-classification handoff for committed candidates."
     },
     {
       "text": "Separates the protected account and rate-paused account from comparable rankings.",
@@ -22,10 +22,10 @@
     }
   ],
   "summary": {
-    "passed": 3,
-    "failed": 1,
+    "passed": 2,
+    "failed": 2,
     "total": 4,
-    "pass_rate": 0.75
+    "pass_rate": 0.5
   },
   "execution_metrics": {
     "tool_calls": {},

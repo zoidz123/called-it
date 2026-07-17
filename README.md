@@ -115,6 +115,10 @@ bun run packages/agent/src/cli.ts doctor --json
 bun run packages/agent/src/cli.ts analyze @handle1 @handle2 --since 2026-01-01
 ```
 
+The local agent path does not require `OPENAI_API_KEY` or another model API credential.
+When `analyze` returns `needs_host_classification`, the installed skill directs the current Codex or Claude coding harness to classify the private request file, write the constrained response file, and run the returned `called-it report` command.
+Pricing, returns, coverage, ranking, and JSON/Markdown report generation remain deterministic package operations.
+
 To install the procedural skill for a compatible local agent, copy the entire `skills/called-it` directory into that agent's skill directory.
 Do not copy only `SKILL.md`, because the report, reliability, troubleshooting, and evaluation references are part of the skill.
 The first live scan requires a one-time browser-access confirmation for the configured local principal and profile.

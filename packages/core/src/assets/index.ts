@@ -91,7 +91,11 @@ const COMMON_ASSETS: Record<string, Omit<ResolvedAsset, 'symbol' | 'sourceId'> &
 const yahooSearchCache = new Map<string, Promise<AssetCandidate[]>>()
 let hyperliquidMidsPromise: Promise<Record<string, string>> | null = null
 
-export async function resolveAssets(symbols: string[], contexts: Map<string, AssetContext> = new Map()): Promise<Map<string, ResolvedAsset>> {
+export async function resolveAssets(
+  symbols: string[],
+  contexts: Map<string, AssetContext> = new Map(),
+  options: { allowLlm?: boolean } = {},
+): Promise<Map<string, ResolvedAsset>> {
   const out = new Map<string, ResolvedAsset>()
   const unique = [...new Set(symbols.map((symbol) => cleanSymbol(symbol)).filter(Boolean))]
   const unresolved: string[] = []
@@ -127,7 +131,7 @@ export async function resolveAssets(symbols: string[], contexts: Map<string, Ass
     if (candidates.length) ambiguous.push({ raw, candidates, context: contexts.get(`$${raw}`) })
   }
 
-  const llmResolved = await resolveWithLlm(ambiguous)
+  const llmResolved = options.allowLlm === false ? new Map<string, AssetCandidate>() : await resolveWithLlm(ambiguous)
   for (const [raw, candidate] of llmResolved) {
     out.set(`$${raw}`, toResolvedAsset(raw, candidate, 'llm'))
   }

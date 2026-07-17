@@ -1,8 +1,16 @@
 #!/usr/bin/env bun
 import { randomUUID } from 'node:crypto'
-import { chmodSync, writeFileSync } from 'node:fs'
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { analyzeStoredPosts } from './analysis'
+import {
+  analyzeStoredPostsWithHost,
+  buildHostClassificationRequest,
+  emptyHostClassificationResponse,
+  hostClassificationRequestSchema,
+  hostClassificationResponseSchema,
+  type HostClassificationRequest,
+  type HostClassificationResponse,
+} from './analysis'
 import { ensurePrivateDirectory, loadBrowserConfig, rejectCredentialMaterial, resolveAgentPaths, saveBrowserConfig } from './config'
 import { runDoctor } from './doctor'
 import { assembleReport, refreshEvidenceStatuses, renderMarkdown, type CalledItReport } from './report'
@@ -18,6 +26,7 @@ try {
   if (command === 'setup') await setup(args)
   else if (command === 'doctor') await doctor(args)
   else if (command === 'analyze' || command === 'resume') await analyze(args)
+  else if (command === 'report') await reportFromHost(args)
   else if (command === 'inspect') await inspect(args)
   else usage(command ? `Unknown command: ${command}` : undefined)
 } catch (error) {
@@ -83,9 +92,48 @@ async function analyze(args: string[]) {
     onProgress(stage, handle) { console.error(JSON.stringify({ stage, handle: `@${handle}` })) },
   })
   await reconcileRecentEvidence({ runner, store, handles, since: new Date(Date.now() - 7 * 86_400_000).toISOString(), limit: 10 })
-  const accounts = await analyzeStoredPosts(store, handles, requestedFrom, requestedTo, (stage, handle) => console.error(JSON.stringify({ stage, handle: `@${handle}` })))
+  const request = buildHostClassificationRequest({ requestId: randomUUID(), store, handles, requestedFrom, requestedTo, coverage: scan.coverage, scanResults: scan.results })
+  ensurePrivateDirectory(paths.reportsDir)
+  const requestPath = join(paths.reportsDir, `${request.requestId}.classification-request.json`)
+  writePrivate(requestPath, `${JSON.stringify(request, null, 2)}\n`)
+  if (request.candidates.length) {
+    const responsePath = join(paths.reportsDir, `${request.requestId}.classification-response.json`)
+    store.close()
+    console.log(JSON.stringify({
+      status: 'needs_host_classification',
+      requestId: request.requestId,
+      classificationRequestPath: requestPath,
+      classificationResponsePath: responsePath,
+      candidateCount: request.candidates.length,
+      partial: scan.results.some((result) => result.status !== 'complete'),
+      next: { command: 'called-it report', args: ['--request', requestPath, '--classifications', responsePath] },
+    }, null, 2))
+    return
+  }
+  await writeReport(store, request, emptyHostClassificationResponse(request))
+}
+
+async function reportFromHost(args: string[]) {
+  const requestPath = value(args, '--request')
+  const classificationsPath = value(args, '--classifications')
+  const request = hostClassificationRequestSchema.parse(JSON.parse(readFileSync(requestPath, 'utf8')))
+  const response = hostClassificationResponseSchema.parse(JSON.parse(readFileSync(classificationsPath, 'utf8')))
+  await writeReport(new AgentStore(), request, response)
+}
+
+async function writeReport(store: AgentStore, request: HostClassificationRequest, response: HostClassificationResponse) {
+  const paths = resolveAgentPaths()
+  const accounts = await analyzeStoredPostsWithHost(store, request, response, (stage, handle) => console.error(JSON.stringify({ stage, handle: `@${handle}` })))
   console.error(JSON.stringify({ stage: 'reporting' }))
-  const report = assembleReport({ id: randomUUID(), generatedAt: new Date().toISOString(), requestedFrom, requestedTo, coverage: scan.coverage, accounts, scanResults: scan.results })
+  const report = assembleReport({
+    id: randomUUID(),
+    generatedAt: new Date().toISOString(),
+    requestedFrom: request.requestedFrom,
+    requestedTo: request.requestedTo,
+    coverage: request.coverage,
+    accounts,
+    scanResults: request.scanResults,
+  })
   const json = `${JSON.stringify(report, null, 2)}\n`
   const markdown = renderMarkdown(report)
   ensurePrivateDirectory(paths.reportsDir)
@@ -93,9 +141,15 @@ async function analyze(args: string[]) {
   const markdownPath = join(paths.reportsDir, `${report.id}.md`)
   writePrivate(jsonPath, json)
   writePrivate(markdownPath, markdown)
-  store.saveReport(report.id, requestedFrom, requestedTo, json, markdown, report.generatedAt)
+  store.saveReport(report.id, request.requestedFrom, request.requestedTo, json, markdown, report.generatedAt)
   store.close()
-  console.log(JSON.stringify({ reportId: report.id, jsonPath, markdownPath, partial: report.partialHandles.length > 0, resume: report.partialHandles.length ? `called-it resume ${handles.map((handle) => `@${handle}`).join(' ')} --since ${since}` : null }, null, 2))
+  console.log(JSON.stringify({
+    reportId: report.id,
+    jsonPath,
+    markdownPath,
+    partial: report.partialHandles.length > 0,
+    resume: report.partialHandles.length ? `called-it resume ${request.handles.map((handle) => `@${handle}`).join(' ')} --since ${request.requestedFrom}` : null,
+  }, null, 2))
   if (report.partialHandles.length) process.exitCode = 2
 }
 
@@ -158,6 +212,6 @@ function numberValue(args: string[], flag: string) {
 
 function usage(error?: string): never {
   if (error) console.error(error)
-  console.error('Usage: called-it setup|doctor|analyze|resume|inspect [options]')
+  console.error('Usage: called-it setup|doctor|analyze|resume|report|inspect [options]')
   process.exit(1)
 }

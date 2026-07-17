@@ -2,6 +2,14 @@
 
 Read this reference when consuming the JSON report or mapping it into another tool.
 
+## Host handoff files
+
+`analyze` and `resume` may first write a private `classification-request.json` file and return `needs_host_classification`.
+That request contains the immutable scan coverage, scan results, and cashtag candidates needed by the coding harness.
+The host response contains only the matching request ID, candidate IDs, listed assets, directions, and conviction values.
+`called-it report` validates the handoff before pricing or saving a report.
+Neither handoff requires a model API key.
+
 ## Stable top-level fields
 
 - `schemaVersion` is `1`.

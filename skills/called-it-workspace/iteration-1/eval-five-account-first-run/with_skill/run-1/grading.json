@@ -6,9 +6,9 @@
       "evidence": "Before presenting the scan command, the response explains read-only use of the selected local browser session, local normalized post and cursor storage, possible X rate limits or challenges, and best-effort non-authoritative coverage."
     },
     {
-      "text": "Uses called-it doctor and called-it analyze rather than Bird or another X provider directly.",
+      "text": "Uses called-it doctor and called-it analyze, then handles needs_host_classification with the constrained host response and called-it report instead of requesting an API key.",
       "passed": true,
-      "evidence": "The response specifies `called-it doctor --json` followed by one `called-it analyze` command. Bird is mentioned only as an implementation bundled behind Called It, not invoked directly."
+      "evidence": "The response specifies `called-it doctor --json` and one grouped `called-it analyze`, then explains the needs_host_classification response, private host-written classifications, and returned called-it report command without a model API key."
     },
     {
       "text": "Requests one explicit browser source and profile without asking for cookie values.",

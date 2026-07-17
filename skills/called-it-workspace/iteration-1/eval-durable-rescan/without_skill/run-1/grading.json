@@ -16,9 +16,9 @@
       "evidence": "No cursor or cookie value is printed or requested. The generic phrase `prior cursor or cutoff` does not reveal or solicit an opaque value."
     },
     {
-      "text": "Names the resulting coverage and scan-result fields needed to explain new work and refuses to invent page, post, or retry counts before the resume result exists.",
+      "text": "Names the resulting coverage and scan-result fields needed to explain new work, uses the host classification handoff without an API key when requested, and refuses to invent counts before the result exists.",
       "passed": false,
-      "evidence": "The response refuses to invent an exact delta, but it does not name the Called It `coverage` and `scanResults` fields or the specific status, window, committed-work, and retry fields needed for the accounting."
+      "evidence": "The response refuses to invent an exact delta, but it does not name the Called It coverage and scanResults fields, the specific accounting fields, or the no-key host-classification handoff."
     }
   ],
   "summary": {

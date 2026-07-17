@@ -1,9 +1,9 @@
 {
   "expectations": [
     {
-      "text": "Returns committed partial evidence instead of discarding the report.",
+      "text": "Completes the host classification handoff for committed candidates and returns partial evidence without requesting a model API key.",
       "passed": true,
-      "evidence": "The response says the rate-paused account keeps every page and post committed before the 429 and identifies the partial report as the trustworthy artifact to use."
+      "evidence": "The response preserves every page and post committed before the 429, uses the coding harness to classify committed candidates without a model API key, and identifies the resulting partial report as trustworthy."
     },
     {
       "text": "Separates the protected account and rate-paused account from comparable rankings.",
