@@ -18,12 +18,15 @@ import { AgentStore } from './store'
 import { ingestHandles } from './x/bird-ingest'
 import { reconcileRecentEvidence } from './x/bird-reconcile'
 import { BundledBirdRunner } from './x/bird-runner'
+import agentPackage from '../package.json' with { type: 'json' }
 
 const [command, ...args] = process.argv.slice(2)
+const launcher = process.env.CALLED_IT_LAUNCHER || 'called-it'
 rejectCredentialMaterial(process.argv.slice(2))
 
 try {
-  if (command === 'setup') await setup(args)
+  if (command === '--version' || command === '-v' || command === 'version') console.log(agentPackage.version)
+  else if (command === 'setup') await setup(args)
   else if (command === 'doctor') await doctor(args)
   else if (command === 'analyze' || command === 'resume') await analyze(args)
   else if (command === 'report') await reportFromHost(args)
@@ -106,7 +109,7 @@ async function analyze(args: string[]) {
       classificationResponsePath: responsePath,
       candidateCount: request.candidates.length,
       partial: scan.results.some((result) => result.status !== 'complete'),
-      next: { command: 'called-it report', args: ['--request', requestPath, '--classifications', responsePath] },
+      next: { command: launcher, args: ['report', '--request', requestPath, '--classifications', responsePath] },
     }, null, 2))
     return
   }
@@ -148,7 +151,10 @@ async function writeReport(store: AgentStore, request: HostClassificationRequest
     jsonPath,
     markdownPath,
     partial: report.partialHandles.length > 0,
-    resume: report.partialHandles.length ? `called-it resume ${request.handles.map((handle) => `@${handle}`).join(' ')} --since ${request.requestedFrom}` : null,
+    resume: report.partialHandles.length ? {
+      command: launcher,
+      args: ['resume', ...request.handles.map((handle) => `@${handle}`), '--since', request.requestedFrom],
+    } : null,
   }, null, 2))
   if (report.partialHandles.length) process.exitCode = 2
 }
@@ -212,6 +218,6 @@ function numberValue(args: string[], flag: string) {
 
 function usage(error?: string): never {
   if (error) console.error(error)
-  console.error('Usage: called-it setup|doctor|analyze|resume|report|inspect [options]')
+  console.error('Usage: called-it setup|doctor|analyze|resume|report|inspect|--version [options]')
   process.exit(1)
 }

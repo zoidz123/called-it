@@ -11,13 +11,17 @@ Use the current coding harness for conservative classification and the final nar
 Do not recreate scoring formulas or call Bird directly.
 Do not request or use an OpenAI API key or another model API credential.
 
+The installer exposes the stable launcher at `${CALLED_IT_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/called-it}/runtime/bin/called-it`.
+Set `CALLED_IT_CLI` to that path and invoke it quoted for every command below.
+Do not assume the launcher is on `PATH`, and do not edit shell configuration.
+
 ## Before live access
 
-Run `called-it doctor --json` first.
+Run `"$CALLED_IT_CLI" doctor --json` first.
 If setup is missing, ask the user which local Safari, Chrome or Chromium, or Firefox profile to use, then run:
 
 ```sh
-called-it setup --cookie-source <safari|chrome|firefox> --profile <profile-name>
+"$CALLED_IT_CLI" setup --cookie-source <safari|chrome|firefox> --profile <profile-name>
 ```
 
 Before the first live scan for that profile and signed-in principal, explain:
@@ -37,7 +41,7 @@ Normalize each requested account to an `@handle` and clarify the UTC lookback if
 Run one command for the requested group:
 
 ```sh
-called-it analyze @handle1 @handle2 --since <ISO-date> [--confirm-browser-access]
+"$CALLED_IT_CLI" analyze @handle1 @handle2 --since <ISO-date> [--confirm-browser-access]
 ```
 
 When the CLI returns `needs_host_classification`, read the private `classificationRequestPath`.
@@ -62,10 +66,10 @@ Read [references/reliability.md](references/reliability.md) when explaining rank
 Resume with the same handles and requested start date:
 
 ```sh
-called-it resume @handle1 @handle2 --since <ISO-date>
+"$CALLED_IT_CLI" resume @handle1 @handle2 --since <ISO-date>
 ```
 
-Inspect the latest saved report with `called-it inspect`, or use `called-it inspect --report <id> --json` for a specific structured report.
+Inspect the latest saved report with `"$CALLED_IT_CLI" inspect`, or use `"$CALLED_IT_CLI" inspect --report <id> --json` for a specific structured report.
 The ledger starts every rescan at the head, uses known-post overlap, and continues tail backfill from the last committed cursor.
 
 On rate limits, authentication expiry, Bird incompatibility, or unavailable accounts, classify any committed candidates, return the partial report, and use the CLI-provided resume action.

@@ -98,32 +98,62 @@ bun run check
 
 ## Local agent skill
 
-The installable skill under [`skills/called-it`](skills/called-it) uses the local `@called-it/agent` package.
-This path is separate from the hosted website ingestion path and uses only bundled `@steipete/bird@0.8.0` with an explicitly selected local browser profile.
-It does not accept browser cookie values or fall back to an official X API, TwitterAPI.io, a paid X provider, or browser automation.
+The consumer package installs a complete skill and a separate, versioned runtime for Codex or Claude Code.
+Node.js 18 or newer runs the `npx` bootstrap, while the installed runtime requires Bun 1.x.
+The installer does not install global packages or edit shell configuration.
 
-Prepare the repository-local package without publishing or installing it globally:
+Install for either supported harness:
 
-```bash
+```sh
+npx @called-it/agent install --target codex
+npx @called-it/agent install --target claude
+```
+
+Codex installs to `${CODEX_HOME:-$HOME/.codex}/skills/called-it`.
+Claude Code installs to `${CLAUDE_HOME:-$HOME/.claude}/skills/called-it`, matching the current user-skill convention.
+The stable runtime launcher defaults to `${CALLED_IT_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/called-it}/runtime/bin/called-it` and remains outside both skill directories.
+
+Ask the installed Called It skill to analyze or compare X accounts.
+On first use, choose the local Safari, Chrome or Chromium, or Firefox profile that is already signed into x.com.
+The skill runs `doctor` before live access, explains the read-only browser-session disclosure, and asks for confirmation once for that local profile and signed-in principal.
+Never paste cookies, `auth_token`, or `ct0` into Called It.
+
+The consumer path never requests `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, an X API key, or browser cookie values.
+The current Codex or Claude Code harness performs constrained classification without a separate model credential.
+Bundled Bird 0.8.0 is the only X ingestion path and is restricted to read-only `whoami`, `user-tweets`, and targeted `read` commands.
+It does not fall back to the official X API, TwitterAPI.io, another paid provider, or browser automation.
+
+Update the installed target with the matching command:
+
+```sh
+npx @called-it/agent update --target codex
+npx @called-it/agent update --target claude
+```
+
+Updates verify the package, runtime, skill, Bird bundle, license inventory, versions, and checksums before activation.
+Downgrades are refused unless `--allow-downgrade` is explicit.
+Modified or unmanaged skill files are refused unless `--backup-modified` is explicit, which preserves a timestamped backup and prints its path.
+
+Uninstall either target without deleting user evidence:
+
+```sh
+npx @called-it/agent uninstall --target codex
+npx @called-it/agent uninstall --target claude
+```
+
+Normal uninstall preserves browser-profile configuration, the SQLite evidence ledger, and saved reports.
+Destructive deletion requires `--purge`, an interactive terminal, and the exact confirmation word `PURGE`.
+The package remains self-contained after npm downloads it, so an already cached package can run the bootstrap without fetching runtime dependencies.
+
+Repository contributors can build and verify the exact consumer tarball without installing it:
+
+```sh
 bun install --frozen-lockfile
-bun run --cwd packages/agent bundle:bird
+bun run --cwd packages/agent build:distribution
+npm pack --dry-run --json --ignore-scripts ./packages/agent
 ```
 
-Run the CLI from this checkout:
-
-```bash
-bun run packages/agent/src/cli.ts setup --cookie-source chrome --profile Default
-bun run packages/agent/src/cli.ts doctor --json
-bun run packages/agent/src/cli.ts analyze @handle1 @handle2 --since 2026-01-01
-```
-
-The local agent path does not require `OPENAI_API_KEY` or another model API credential.
-When `analyze` returns `needs_host_classification`, the installed skill directs the current Codex or Claude coding harness to classify the private request file, write the constrained response file, and run the returned `called-it report` command.
-Pricing, returns, coverage, ranking, and JSON/Markdown report generation remain deterministic package operations.
-
-To install the procedural skill for a compatible local agent, copy the entire `skills/called-it` directory into that agent's skill directory.
-Do not copy only `SKILL.md`, because the report, reliability, troubleshooting, and evaluation references are part of the skill.
-The first live scan requires a one-time browser-access confirmation for the configured local principal and profile.
+See [`docs/releases/agent.md`](docs/releases/agent.md) for the fail-closed maintainer release sequence.
 
 ## Architecture and data sources
 
@@ -156,7 +186,8 @@ The first live scan requires a one-time browser-access confirmation for the conf
 
 ## License and contributions
 
-No project license has been selected.
-Until a license is added, the code is publicly visible but is not licensed for reuse, modification, or redistribution.
+The `@called-it/agent` consumer package is distributed under the MIT license included in [`packages/agent/LICENSE`](packages/agent/LICENSE).
+No repository-wide license has been selected for the hosted application and other packages.
+Outside the consumer package, the code is publicly visible but is not licensed for reuse, modification, or redistribution.
 Contributions are not currently accepted because contribution terms and governance have not been defined.
-Choose a license and contribution policy before describing the project as open source.
+Choose a repository-wide license and contribution policy before describing the whole project as open source.

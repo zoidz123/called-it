@@ -20,6 +20,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "^2.2.0",
+        "@steipete/bird": "0.8.0",
         "@types/bun": "^1.3.14",
         "@types/node": "^25.9.3",
         "@types/react": "^19.2.17",
@@ -47,12 +48,7 @@
       "name": "@called-it/agent",
       "version": "0.1.0",
       "bin": {
-        "called-it": "./src/cli.ts",
-      },
-      "dependencies": {
-        "@called-it/core": "workspace:*",
-        "@steipete/bird": "0.8.0",
-        "zod": "^4.4.3",
+        "called-it": "./dist/bootstrap.mjs",
       },
     },
     "packages/core": {
