@@ -49,7 +49,7 @@ export function ScanBox({
         window.location.href = `/u/${pre.handle ?? clean}`
         return
       } else {
-        if (!pre.ok) throw new Error(pre.message || 'This account is not ready to scan.')
+        if (!pre.ok) throw new Error(precheckErrorMessage(pre))
         setScanMessage('Starting scan...')
       }
       setScanProgress(5)
@@ -160,6 +160,10 @@ export function ScanBox({
       ) : null}
     </section>
   )
+}
+
+export function precheckErrorMessage(pre: { error?: string; message?: string }) {
+  return pre.error || pre.message || 'This account is not ready to scan.'
 }
 
 function clampProgress(value: number) {
