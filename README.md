@@ -73,6 +73,7 @@ Common optional controls include `API_PORT`, `WEB_PORT`, `SCAN_WORKER_ENABLED`, 
 See the provider adapters for the remaining tuning controls.
 
 Missing database or worker credentials fail before the corresponding process starts.
+With `SCAN_WORKER_ENABLED=false`, the API still serves cached scorecards, and the scan endpoints return `503` responses.
 Production web builds fail without explicit public API and site URLs.
 Production API startup fails without an explicit CORS allowlist.
 
