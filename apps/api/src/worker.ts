@@ -1,6 +1,16 @@
 import crypto from 'node:crypto'
 import { performance } from 'node:perf_hooks'
-import { candidatesFromTweets, classifyCandidates, filterIgnoredCashtags, getAuthorTimeline, getXUser, refreshExistingCallPrices, scoreCalls } from '@called-it/core'
+import {
+  candidatesFromTweets,
+  classifyCandidates,
+  filterIgnoredCashtags,
+  getAuthorTimeline,
+  getXUser,
+  refreshExistingCallPrices,
+  requiredAnyEnv,
+  requiredEnv,
+  scoreCalls,
+} from '@called-it/core'
 import {
   claimNextScanJob,
   completeScanJob,
@@ -19,6 +29,8 @@ type LatencyStage = (typeof LATENCY_STAGES)[number]
 type StageTiming = { stage: LatencyStage; durationMs: number; status: 'complete' | 'failed' }
 
 export function startWorkerLoop({ concurrency = Number(process.env.SCAN_WORKER_CONCURRENCY ?? 1), workerId = crypto.randomUUID() } = {}) {
+  requiredEnv('OPENAI_API_KEY')
+  requiredAnyEnv(['TWITTERAPI_IO_API_KEYS', 'TWITTERAPI_IO_API_KEY', 'TWITTERAPI_IO_FALLBACK_API_KEY', 'TWITTERAPI_IO_API_KEY_4'])
   const controllers = Array.from({ length: Math.max(1, concurrency) }, () => ({ stopped: false }))
   for (const controller of controllers) runLoop({ controller, workerId })
   return { stop: () => controllers.forEach((controller) => { controller.stopped = true }) }

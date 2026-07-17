@@ -1,13 +1,47 @@
+# Dependencies and build output
 node_modules/
-.env
-.recipient-key
-*.log
-.DS_Store
-.cache/
 apps/web/.next/
 .next/
-.vercel
+dist/
+build/
+coverage/
 
-# Local runtime / tooling artifacts
+# Environment and provider credentials
+.env
+.env.*
+!.env.example
+.neon
+.neon/
+.recipient-key
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*service-account*.json
+
+# Local databases, caches, and datasets
+.cache/
+**/.cache/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.dump
+*.sql
+*.csv
+*.tsv
+*.parquet
+*.ndjson
+*.jsonl
+
+# Local deployment and runtime state
+.vercel/
+.railway/
 *.pid
+*.log
+.DS_Store
+
+# Agent review artifacts
+.charts/
 .lavish/

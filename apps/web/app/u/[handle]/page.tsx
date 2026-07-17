@@ -5,8 +5,8 @@ import { Avatar } from '../../../components/Avatar'
 import { apiGet } from '../../../lib/api'
 import { formatNumber, formatPct } from '../../../lib/format'
 import { buildAssetRows, formatDate, topShareRows, type Scorecard, type ShareCallRow } from '../../../lib/scorecard'
+import { SITE_URL } from '../../../lib/site'
 
-const SITE_URL = 'https://www.calledit.site'
 export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }): Promise<Metadata> {
@@ -80,7 +80,7 @@ async function loadScorecard(handle: string) {
 
 function ShareImageCard({ data, rows }: { data: Scorecard; rows: ShareCallRow[] }) {
   const { user } = data
-  const profileUrl = `${SITE_URL}/u/${encodeURIComponent(user.handle)}`
+  const profileUrl = new URL(`/u/${encodeURIComponent(user.handle)}`, SITE_URL).toString()
   const imageUrl = `/u/${encodeURIComponent(user.handle)}/opengraph-image?v=${shareImageVersion(data)}`
   const shareText = [
     `${user.name}'s Called It scorecard`,

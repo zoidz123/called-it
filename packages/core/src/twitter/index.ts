@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { optionalEnv, requiredEnv } from '../env'
+import { optionalEnv } from '../env'
 import { extractCashtags, mapWithConcurrency } from '../classify'
 import type { Tweet, TweetCandidate, XUser } from '../types'
 

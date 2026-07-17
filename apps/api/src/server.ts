@@ -12,6 +12,7 @@ import {
 } from '@called-it/db'
 import { getXUser, loadLocalEnv, parseXHandle } from '@called-it/core'
 import { startWorkerLoop } from './worker'
+import { corsOrigin, scanIsConfigured } from './config'
 
 loadLocalEnv()
 
@@ -24,7 +25,7 @@ const feedbackBuckets = new Map<string, { count: number; resetAt: number; finger
 export async function buildServer() {
   await migrate()
   const app = Fastify({ logger: true })
-  await app.register(cors, { origin: true })
+  await app.register(cors, { origin: corsOrigin() })
 
   app.get('/health', async () => ({ ok: true, service: 'called-it-api' }))
 
@@ -92,13 +93,14 @@ export async function buildServer() {
     return { job }
   })
 
-  app.get('/api/scan/:handle/precheck', async (request: any) => {
+  app.get('/api/scan/:handle/precheck', async (request: any, reply) => {
     const handle = parseXHandle(request.params.handle)
     const scorecard = await getUserScorecard(handle, { includeTweets: false })
     if (scorecard) {
       const refresh = await maybeEnqueueStaleRefreshes(scorecard.user.handle)
       return { ok: true, handle: scorecard.user.handle, cached: true, freeToView: true, refresh }
     }
+    if (!scanIsConfigured()) return reply.code(503).send({ error: 'Scanning is not configured.' })
     const user = await getXUser(handle)
     return {
       ok: true,
@@ -110,6 +112,7 @@ export async function buildServer() {
   })
 
   app.post('/api/scan/:handle', async (request: any, reply) => {
+    if (!scanIsConfigured()) return reply.code(503).send({ error: 'Scanning is not configured.' })
     const handle = parseXHandle(request.params.handle)
     const job = await createOrReuseScanJob({ handle })
     return { jobId: job.id, handle, status: job.status }
