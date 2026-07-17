@@ -1,0 +1,15 @@
+{
+  "version": "0.8.0",
+  "sweetCookieVersion": "0.1.0",
+  "sha256": "c764c2d3d69afe6eb6039185b55732a153d2ebb0228d9cd6e8ca1276c292374f",
+  "chromeExpiryCastApplied": false,
+  "commands": [
+    "whoami",
+    "user-tweets",
+    "read"
+  ],
+  "licenses": [
+    "licenses/BIRD-MIT.txt",
+    "licenses/SWEET-COOKIE-MIT.txt"
+  ]
+}

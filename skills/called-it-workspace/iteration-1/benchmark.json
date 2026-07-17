@@ -1,16 +1,16 @@
 {
   "metadata": {
     "skill_name": "called-it",
-    "skill_path": "<path/to/skill>",
-    "executor_model": "<model-name>",
-    "analyzer_model": "<model-name>",
+    "skill_path": "skills/called-it",
+    "executor_model": "gpt-5.6-sol",
+    "analyzer_model": "gpt-5.6-sol",
     "timestamp": "2026-07-17T16:31:08Z",
     "evals_run": [
       1,
       2,
       3
     ],
-    "runs_per_configuration": 3
+    "runs_per_configuration": 1
   },
   "runs": [
     {
@@ -289,5 +289,14 @@
       "tokens": "+990"
     }
   },
-  "notes": []
+  "notes": [
+    "Across three distinct evals, the skill-backed configuration passed all 12 assertions while the baseline passed 4 of 12; one run per eval cannot establish variance or flakiness.",
+    "Eval 1 separated the configurations on all first-use disclosure, profile selection, Called It command, and comparable-ranking requirements.",
+    "Eval 2 separated exact resume, overlap and backfill, and report-field mechanics, while cursor and cookie safety passed both configurations.",
+    "Eval 3's general partial-data assertions passed both configurations; the Called It resume action and 15-minute global pause produced the only additional skill-backed pass.",
+    "The skill advantage was concentrated in Called It-specific operational mechanics rather than generic safety judgment.",
+    "The +13.6 second timing delta is unreliable because the eval 1 baseline duration was unavailable and encoded as zero.",
+    "Token notifications were unavailable, so the benchmark token field is an output-character proxy and not model token consumption.",
+    "All six simulations reported zero tool calls and zero errors, so pass-rate differences measure guidance content rather than live CLI execution."
+  ]
 }

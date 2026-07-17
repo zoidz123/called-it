@@ -1,0 +1,11 @@
+{
+  "eval_id": 2,
+  "eval_name": "durable-rescan",
+  "prompt": "Rerun my previous Called It scan for @alpha_macro from 2026-01-01. Tell me exactly what new timeline work was needed and use the local evidence already collected instead of starting over.",
+  "assertions": [
+    "Uses called-it resume with the same handle and requested start date.",
+    "Explains that the rescan checks the head and resumes tail backfill from the last committed page.",
+    "Does not print, request, or describe the value of an opaque cursor or browser cookie.",
+    "Names the resulting coverage and scan-result fields needed to explain new work and refuses to invent page, post, or retry counts before the resume result exists."
+  ]
+}
