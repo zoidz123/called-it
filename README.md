@@ -75,6 +75,8 @@ See the provider adapters for the remaining tuning controls.
 Missing database or worker credentials fail before the corresponding process starts.
 With `SCAN_WORKER_ENABLED=false`, the API still serves cached scorecards, and the scan endpoints return `503` responses.
 Production web builds fail without explicit public API and site URLs.
+Vercel preview builds derive the browser-visible site URL from Vercel's generated `VERCEL_URL` hostname when `NEXT_PUBLIC_SITE_URL` is absent.
+Preview builds never derive an API URL, so live data and scanning remain unavailable unless an explicit preview-only `NEXT_PUBLIC_API_URL` is configured.
 Production API startup fails without an explicit CORS allowlist.
 
 ## Development

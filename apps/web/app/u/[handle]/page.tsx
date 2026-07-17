@@ -5,7 +5,7 @@ import { Avatar } from '../../../components/Avatar'
 import { apiGet } from '../../../lib/api'
 import { formatNumber, formatPct } from '../../../lib/format'
 import { buildAssetRows, formatDate, topShareRows, type Scorecard, type ShareCallRow } from '../../../lib/scorecard'
-import { SITE_URL } from '../../../lib/site'
+import { getSiteUrl } from '../../../lib/site'
 
 export const dynamic = 'force-dynamic'
 
@@ -80,7 +80,7 @@ async function loadScorecard(handle: string) {
 
 function ShareImageCard({ data, rows }: { data: Scorecard; rows: ShareCallRow[] }) {
   const { user } = data
-  const profileUrl = new URL(`/u/${encodeURIComponent(user.handle)}`, SITE_URL).toString()
+  const profileUrl = new URL(`/u/${encodeURIComponent(user.handle)}`, getSiteUrl()).toString()
   const imageUrl = `/u/${encodeURIComponent(user.handle)}/opengraph-image?v=${shareImageVersion(data)}`
   const shareText = [
     `${user.name}'s Called It scorecard`,
