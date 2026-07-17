@@ -1,0 +1,12 @@
+{
+  "queryId": "HTTP 404 QueryId not found",
+  "rateLimit": "HTTP 429 Too Many Requests",
+  "server": "HTTP 503 Internal server error",
+  "timeout": "Request timed out",
+  "safariWarning": "Safari cookies unavailable; continuing with Chrome\nInternal server error",
+  "missingCookies": "No Twitter cookies found",
+  "auth": "HTTP 401 Unauthorized",
+  "protected": "This account is protected",
+  "suspended": "Account suspended",
+  "cursorRejected": "Invalid cursor: expired"
+}

@@ -1,0 +1,81 @@
+{
+  "expectations": [
+    {
+      "text": "Explains read-only local browser-session use, local normalized storage, possible X rate limits, and best-effort coverage before the first scan.",
+      "passed": false,
+      "evidence": "The response mentions future installation or authentication and partial X coverage, but does not disclose read-only local browser-session use, normalized local storage, or rate-limit behavior before a scan."
+    },
+    {
+      "text": "Uses called-it doctor and called-it analyze, then handles needs_host_classification with the constrained host response and called-it report instead of requesting an API key.",
+      "passed": false,
+      "evidence": "No called-it doctor, analyze, host-classification handoff, or report command is named or used."
+    },
+    {
+      "text": "Requests one explicit browser source and profile without asking for cookie values.",
+      "passed": false,
+      "evidence": "The response does not request a browser source or exact signed-in profile."
+    },
+    {
+      "text": "Ranks only comparable handles and includes sample sizes, requested versus observed coverage, partial handles, and a financial-advice disclaimer.",
+      "passed": false,
+      "evidence": "It sensibly refuses to invent a ranking and mentions per-account coverage, but it does not specify comparable-handle eligibility, priced-call sample sizes, requested versus observed windows, or a financial-advice disclaimer."
+    }
+  ],
+  "summary": {
+    "passed": 0,
+    "failed": 4,
+    "total": 4,
+    "pass_rate": 0
+  },
+  "execution_metrics": {
+    "tool_calls": {},
+    "total_tool_calls": 0,
+    "total_steps": 3,
+    "files_created": [
+      "response.md",
+      "transcript.md"
+    ],
+    "errors_encountered": 0,
+    "output_chars": 2100,
+    "transcript_chars": 740
+  },
+  "timing": {
+    "total_tokens": 0,
+    "duration_ms": 0,
+    "total_duration_seconds": 0.0,
+    "note": "Task notifications and executor exposed no reliable duration or token count."
+  },
+  "claims": [
+    {
+      "claim": "No reliable ranking can be produced without retrieved posts and matched market outcomes.",
+      "type": "quality",
+      "verified": true,
+      "evidence": "The transcript confirms no scan or evidence retrieval occurred, so refusing to rank is justified."
+    },
+    {
+      "claim": "Deleted or revised calls can be scored in the proposed workflow.",
+      "type": "factual",
+      "verified": false,
+      "evidence": "No data source or retrieval mechanism capable of observing deletions or revisions is identified."
+    },
+    {
+      "claim": "Repository setup instructions and available commands would be inspected before collection.",
+      "type": "process",
+      "verified": false,
+      "evidence": "The transcript says the response was constructed from the prompt only and no repository files were read."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "reason": "The eval discriminates first-run guidance well, but it does not test an actual fixture-backed analysis or verify report calculations."
+      }
+    ],
+    "overall": "The baseline is honest about missing evidence but fails all Called It-specific first-run requirements. The assertion set is discriminating for guidance quality."
+  }
+}

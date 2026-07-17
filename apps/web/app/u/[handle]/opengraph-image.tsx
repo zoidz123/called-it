@@ -2,7 +2,7 @@ import { ImageResponse } from 'next/og'
 import { apiGet } from '../../../lib/api'
 import { formatNumber, formatPct } from '../../../lib/format'
 import { buildAssetRows, formatDate, topShareRows, type Scorecard, type ShareCallRow } from '../../../lib/scorecard'
-import { SITE_URL } from '../../../lib/site'
+import { getSiteUrl } from '../../../lib/site'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -116,7 +116,7 @@ function ShareCard({ data, rows, avatar }: { data: Scorecard; rows: ShareCallRow
           </div>
         </div>
 
-        <div style={footerStyle}>{SITE_URL.host}/u/{user.handle}</div>
+        <div style={footerStyle}>{getSiteUrl().host}/u/{user.handle}</div>
       </div>
     </div>
   )

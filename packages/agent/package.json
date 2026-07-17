@@ -1,0 +1,36 @@
+{
+  "name": "@called-it/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "called-it": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "dist",
+    "src",
+    "third_party_licenses"
+  ],
+  "scripts": {
+    "bundle:bird": "bun run scripts/bundle-bird.ts",
+    "test": "bun test",
+    "test:e2e": "bun test test/e2e.test.ts",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@called-it/core": "workspace:*",
+    "@steipete/bird": "0.8.0",
+    "zod": "^4.4.3"
+  },
+  "bundledDependencies": [
+    "@steipete/bird",
+    "@steipete/sweet-cookie"
+  ],
+  "calledItBundledLicenses": [
+    "third_party_licenses/BIRD-MIT.txt",
+    "third_party_licenses/SWEET-COOKIE-MIT.txt"
+  ]
+}

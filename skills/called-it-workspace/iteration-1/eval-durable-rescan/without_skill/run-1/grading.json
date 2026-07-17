@@ -1,0 +1,82 @@
+{
+  "expectations": [
+    {
+      "text": "Uses called-it resume with the same handle and requested start date.",
+      "passed": false,
+      "evidence": "The response does not use or name `called-it resume`; it asks the user to locate prior artifacts."
+    },
+    {
+      "text": "Explains that the rescan checks the head and resumes tail backfill from the last committed page.",
+      "passed": false,
+      "evidence": "The response proposes fetching only a segment newer than a boundary. It does not explain a head-overlap check followed by tail backfill from the last committed page."
+    },
+    {
+      "text": "Does not print, request, or describe the value of an opaque cursor or browser cookie.",
+      "passed": true,
+      "evidence": "No cursor or cookie value is printed or requested. The generic phrase `prior cursor or cutoff` does not reveal or solicit an opaque value."
+    },
+    {
+      "text": "Names the resulting coverage and scan-result fields needed to explain new work, uses the host classification handoff without an API key when requested, and refuses to invent counts before the result exists.",
+      "passed": false,
+      "evidence": "The response refuses to invent an exact delta, but it does not name the Called It coverage and scanResults fields, the specific accounting fields, or the no-key host-classification handoff."
+    }
+  ],
+  "summary": {
+    "passed": 1,
+    "failed": 3,
+    "total": 4,
+    "pass_rate": 0.25
+  },
+  "execution_metrics": {
+    "tool_calls": {},
+    "total_tool_calls": 0,
+    "total_steps": 3,
+    "files_created": [
+      "response.md",
+      "transcript.md"
+    ],
+    "errors_encountered": 0,
+    "output_chars": 1449,
+    "transcript_chars": 750
+  },
+  "timing": {
+    "total_tokens": 0,
+    "duration_ms": 20000,
+    "total_duration_seconds": 20.0,
+    "note": "Task notifications exposed no token count; duration was measured by the executor."
+  },
+  "claims": [
+    {
+      "claim": "The previous scan artifact must be located before an exact delta can be stated.",
+      "type": "quality",
+      "verified": true,
+      "evidence": "No prior artifact contents were supplied or inspected, so refusing to invent an exact delta is justified."
+    },
+    {
+      "claim": "Only timeline data newer than the saved boundary should be fetched.",
+      "type": "factual",
+      "verified": false,
+      "evidence": "The output provides no Called It contract evidence for this workflow, and it conflicts with the expected head-overlap plus tail-backfill model."
+    },
+    {
+      "claim": "The already preserved range would not be recollected.",
+      "type": "quality",
+      "verified": false,
+      "evidence": "No command or local state was inspected, so this assurance cannot be verified."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Does not print, request, or describe the value of an opaque cursor or browser cookie.",
+        "reason": "This passes for both configurations and is non-discriminating without a secret-bearing input that tests redaction."
+      }
+    ],
+    "overall": "The baseline is appropriately cautious but lacks the Called It resume and report-field contracts. The secret-safety assertion remains the only non-discriminating assertion in this eval."
+  }
+}

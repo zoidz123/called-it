@@ -1,12 +1,14 @@
 import { Leaderboard, type LeaderboardRow } from '../components/Leaderboard'
 import { ScanBox } from '../components/ScanBox'
-import { apiGet } from '../lib/api'
+import { API_URL, apiGet } from '../lib/api'
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ sort?: string; q?: string }> }) {
   const params = await searchParams
   const sort = params.sort === 'hitrate' ? 'hitrate' : 'return'
   const initialHandle = typeof params.q === 'string' ? params.q : ''
-  const data = await apiGet<{ leaderboard: LeaderboardRow[] }>(`/api/leaderboard?sort=${sort}&limit=100&offset=0`).catch(() => ({ leaderboard: [] }))
+  const data = API_URL
+    ? await apiGet<{ leaderboard: LeaderboardRow[] }>(`/api/leaderboard?sort=${sort}&limit=100&offset=0`).catch(() => ({ leaderboard: [] }))
+    : { leaderboard: [] }
   return (
     <main className="home-page">
       <header className="home-header">
@@ -26,7 +28,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
             <p>Ranked by what happened after public ticker calls.</p>
           </div>
         </div>
-        {data.leaderboard.length ? <Leaderboard initialRows={data.leaderboard} sort={sort} /> : (
+        {!API_URL ? (
+          <div className="empty home-empty">
+            <p>Live data and scanning are unavailable in this preview.</p>
+          </div>
+        ) : data.leaderboard.length ? <Leaderboard initialRows={data.leaderboard} sort={sort} /> : (
           <div className="empty home-empty">
             <a href="#scan">No ranked traders yet.</a>
             <p>Run the first scan and get someone on the board.</p>

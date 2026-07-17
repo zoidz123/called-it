@@ -2,11 +2,15 @@ import { resolveAssets, type AssetContext } from '../assets'
 import { getEntryAndCurrentPrices } from '../pricing'
 import type { ClassifiedTweet, Direction, ResolvedAsset, ScoredCall, UserStats } from '../types'
 
-export async function scoreCalls(handle: string, classifiedTweets: ClassifiedTweet[]): Promise<{ calls: ScoredCall[]; stats: UserStats }> {
+export async function scoreCalls(
+  handle: string,
+  classifiedTweets: ClassifiedTweet[],
+  options: { allowLlmAssetResolution?: boolean } = {},
+): Promise<{ calls: ScoredCall[]; stats: UserStats }> {
   const maxAssets = Number(process.env.SCORING_MAX_ASSETS ?? 0)
   const assetsAll = [...new Set(classifiedTweets.flatMap((tweet) => tweet.stances.map((stance) => stance.asset)))]
   const assets = maxAssets > 0 ? assetsAll.slice(0, maxAssets) : assetsAll
-  const resolved = await resolveAssets(assets, buildAssetContexts(classifiedTweets, assets))
+  const resolved = await resolveAssets(assets, buildAssetContexts(classifiedTweets, assets), { allowLlm: options.allowLlmAssetResolution })
   const callGroups = await mapWithConcurrency(assets, Number(process.env.PRICING_CONCURRENCY ?? 6), async (asset) => {
     return scoreAssetCalls(handle, asset, classifiedTweets, resolved)
   })

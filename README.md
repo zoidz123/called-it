@@ -75,6 +75,8 @@ See the provider adapters for the remaining tuning controls.
 Missing database or worker credentials fail before the corresponding process starts.
 With `SCAN_WORKER_ENABLED=false`, the API still serves cached scorecards, and the scan endpoints return `503` responses.
 Production web builds fail without explicit public API and site URLs.
+Vercel preview builds derive the browser-visible site URL from Vercel's generated `VERCEL_URL` hostname when `NEXT_PUBLIC_SITE_URL` is absent.
+Preview builds never derive an API URL, so live data and scanning remain unavailable unless an explicit preview-only `NEXT_PUBLIC_API_URL` is configured.
 Production API startup fails without an explicit CORS allowlist.
 
 ## Development
@@ -94,6 +96,35 @@ With a configured `.env`, run the full local gate with:
 bun run check
 ```
 
+## Local agent skill
+
+The installable skill under [`skills/called-it`](skills/called-it) uses the local `@called-it/agent` package.
+This path is separate from the hosted website ingestion path and uses only bundled `@steipete/bird@0.8.0` with an explicitly selected local browser profile.
+It does not accept browser cookie values or fall back to an official X API, TwitterAPI.io, a paid X provider, or browser automation.
+
+Prepare the repository-local package without publishing or installing it globally:
+
+```bash
+bun install --frozen-lockfile
+bun run --cwd packages/agent bundle:bird
+```
+
+Run the CLI from this checkout:
+
+```bash
+bun run packages/agent/src/cli.ts setup --cookie-source chrome --profile Default
+bun run packages/agent/src/cli.ts doctor --json
+bun run packages/agent/src/cli.ts analyze @handle1 @handle2 --since 2026-01-01
+```
+
+The local agent path does not require `OPENAI_API_KEY` or another model API credential.
+When `analyze` returns `needs_host_classification`, the installed skill directs the current Codex or Claude coding harness to classify the private request file, write the constrained response file, and run the returned `called-it report` command.
+Pricing, returns, coverage, ranking, and JSON/Markdown report generation remain deterministic package operations.
+
+To install the procedural skill for a compatible local agent, copy the entire `skills/called-it` directory into that agent's skill directory.
+Do not copy only `SKILL.md`, because the report, reliability, troubleshooting, and evaluation references are part of the skill.
+The first live scan requires a one-time browser-access confirmation for the configured local principal and profile.
+
 ## Architecture and data sources
 
 | Path | Responsibility |
@@ -102,6 +133,8 @@ bun run check
 | [`apps/api`](apps/api) | Fastify API, asynchronous scan worker, feedback endpoint, and health check. |
 | [`packages/core`](packages/core) | X fetching, classification, asset resolution, pricing, and scoring. |
 | [`packages/db`](packages/db) | Drizzle schema, migrations, Neon/Postgres client, and queries. |
+| [`packages/agent`](packages/agent) | Local Bird-only scanner, SQLite evidence ledger, reports, and CLI. |
+| [`skills/called-it`](skills/called-it) | Installable local-agent workflow and progressive references. |
 | [`packages/core/src/twitter`](packages/core/src/twitter) | TwitterAPI.io integration and ignored local cache format. |
 | [`packages/core/src/pricing`](packages/core/src/pricing) | Yahoo Finance and Hyperliquid pricing adapters. |
 | [`railway.json`](railway.json) | Example API deployment configuration. |

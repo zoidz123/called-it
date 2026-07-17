@@ -1,0 +1,297 @@
+{
+  "metadata": {
+    "skill_name": "called-it",
+    "skill_path": "skills/called-it",
+    "executor_model": "internal agent harness (metadata unavailable)",
+    "analyzer_model": "objective assertion grading",
+    "timestamp": "2026-07-17T17:01:12Z",
+    "evals_run": [
+      1,
+      2,
+      3
+    ],
+    "runs_per_configuration": 1
+  },
+  "runs": [
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 36.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Uses called-it resume with the same handle and requested start date.",
+          "passed": true,
+          "evidence": "The response gives `called-it resume @alpha_macro --since 2026-01-01`, preserving both the requested handle and start date."
+        },
+        {
+          "text": "Explains that the rescan checks the head and resumes tail backfill from the last committed page.",
+          "passed": true,
+          "evidence": "The response says the work is limited to `checking the current head until it finds known-post overlap, then continuing older tail backfill from the last committed cursor`."
+        },
+        {
+          "text": "Does not print, request, or describe the value of an opaque cursor or browser cookie.",
+          "passed": true,
+          "evidence": "Neither artifact contains a cursor or cookie value. The transcript explicitly records that credentials, cookies, cursors, and secrets were not accessed."
+        },
+        {
+          "text": "Names the resulting coverage and scan-result fields needed to explain new work, uses the host classification handoff without an API key when requested, and refuses to invent counts before the result exists.",
+          "passed": true,
+          "evidence": "The response names coverage and scanResults, lists the exact accounting fields, describes the no-key host-classification handoff if requested, and refuses to invent page, post, or retry counts because resume was not executed."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 24.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Explains read-only local browser-session use, local normalized storage, possible X rate limits, and best-effort coverage before the first scan.",
+          "passed": true,
+          "evidence": "Before presenting the scan command, the response explains read-only use of the selected local browser session, local normalized post and cursor storage, possible X rate limits or challenges, and best-effort non-authoritative coverage."
+        },
+        {
+          "text": "Uses called-it doctor and called-it analyze, then handles needs_host_classification with the constrained host response and called-it report instead of requesting an API key.",
+          "passed": true,
+          "evidence": "The response specifies `called-it doctor --json` and one grouped `called-it analyze`, then explains the needs_host_classification response, private host-written classifications, and returned called-it report command without a model API key."
+        },
+        {
+          "text": "Requests one explicit browser source and profile without asking for cookie values.",
+          "passed": true,
+          "evidence": "It asks for one of Safari, Chrome/Chromium, or Firefox, the exact signed-in profile name, and explicit confirmation, while warning `Do not paste cookies, auth_token, or ct0`."
+        },
+        {
+          "text": "Ranks only comparable handles and includes sample sizes, requested versus observed coverage, partial handles, and a financial-advice disclaimer.",
+          "passed": true,
+          "evidence": "The promised report ranks only handles with comparable evidence and explicitly includes priced-call sample size, requested and observed windows, partial or unavailable status, and `not financial advice`."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 23.864,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Completes the host classification handoff for committed candidates and returns partial evidence without requesting a model API key.",
+          "passed": true,
+          "evidence": "The response preserves every page and post committed before the 429, uses the coding harness to classify committed candidates without a model API key, and identifies the resulting partial report as trustworthy."
+        },
+        {
+          "text": "Separates the protected account and rate-paused account from comparable rankings.",
+          "passed": true,
+          "evidence": "It limits ranking eligibility to the three best-effort accounts with priced calls and lists the protected and rate-paused accounts separately as unavailable or partial."
+        },
+        {
+          "text": "Does not treat missing calls as zero calls and does not switch to another X provider or browser automation.",
+          "passed": true,
+          "evidence": "It explicitly says missing history must not be scored as zero calls and warns not to bypass the pause with another provider or browser automation."
+        },
+        {
+          "text": "Provides the called-it resume action and respects the 15-minute global rate pause.",
+          "passed": true,
+          "evidence": "The response says to wait for `retry_not_before`, explains that a 429 pauses Bird's global queue for 15 minutes, and provides a same-handles, same-start-date `called-it resume` command."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.25,
+        "passed": 1,
+        "failed": 3,
+        "total": 4,
+        "time_seconds": 20.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Uses called-it resume with the same handle and requested start date.",
+          "passed": false,
+          "evidence": "The response does not use or name `called-it resume`; it asks the user to locate prior artifacts."
+        },
+        {
+          "text": "Explains that the rescan checks the head and resumes tail backfill from the last committed page.",
+          "passed": false,
+          "evidence": "The response proposes fetching only a segment newer than a boundary. It does not explain a head-overlap check followed by tail backfill from the last committed page."
+        },
+        {
+          "text": "Does not print, request, or describe the value of an opaque cursor or browser cookie.",
+          "passed": true,
+          "evidence": "No cursor or cookie value is printed or requested. The generic phrase `prior cursor or cutoff` does not reveal or solicit an opaque value."
+        },
+        {
+          "text": "Names the resulting coverage and scan-result fields needed to explain new work, uses the host classification handoff without an API key when requested, and refuses to invent counts before the result exists.",
+          "passed": false,
+          "evidence": "The response refuses to invent an exact delta, but it does not name the Called It coverage and scanResults fields, the specific accounting fields, or the no-key host-classification handoff."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0,
+        "passed": 0,
+        "failed": 4,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Explains read-only local browser-session use, local normalized storage, possible X rate limits, and best-effort coverage before the first scan.",
+          "passed": false,
+          "evidence": "The response mentions future installation or authentication and partial X coverage, but does not disclose read-only local browser-session use, normalized local storage, or rate-limit behavior before a scan."
+        },
+        {
+          "text": "Uses called-it doctor and called-it analyze, then handles needs_host_classification with the constrained host response and called-it report instead of requesting an API key.",
+          "passed": false,
+          "evidence": "No called-it doctor, analyze, host-classification handoff, or report command is named or used."
+        },
+        {
+          "text": "Requests one explicit browser source and profile without asking for cookie values.",
+          "passed": false,
+          "evidence": "The response does not request a browser source or exact signed-in profile."
+        },
+        {
+          "text": "Ranks only comparable handles and includes sample sizes, requested versus observed coverage, partial handles, and a financial-advice disclaimer.",
+          "passed": false,
+          "evidence": "It sensibly refuses to invent a ranking and mentions per-account coverage, but it does not specify comparable-handle eligibility, priced-call sample sizes, requested versus observed windows, or a financial-advice disclaimer."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.5,
+        "passed": 2,
+        "failed": 2,
+        "total": 4,
+        "time_seconds": 23.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Completes the host classification handoff for committed candidates and returns partial evidence without requesting a model API key.",
+          "passed": false,
+          "evidence": "The response preserves completed scan results, but it does not complete or describe the required no-key host-classification handoff for committed candidates."
+        },
+        {
+          "text": "Separates the protected account and rate-paused account from comparable rankings.",
+          "passed": true,
+          "evidence": "It refuses a five-account ranking, marks the protected account unavailable and the rate-limited account incomplete, and keeps their partial counts separate."
+        },
+        {
+          "text": "Does not treat missing calls as zero calls and does not switch to another X provider or browser automation.",
+          "passed": true,
+          "evidence": "It explicitly states that unavailable portions are not missed or bad calls. Neither response nor transcript switches provider or uses browser automation."
+        },
+        {
+          "text": "Provides the called-it resume action and respects the 15-minute global rate pause.",
+          "passed": false,
+          "evidence": "The response gives a generic cursor-based continuation procedure, but no `called-it resume` action and no 15-minute global pause rule."
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1,
+        "max": 1
+      },
+      "time_seconds": {
+        "mean": 27.9547,
+        "stddev": 6.9678,
+        "min": 23.864,
+        "max": 36.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.25,
+        "stddev": 0.25,
+        "min": 0,
+        "max": 0.5
+      },
+      "time_seconds": {
+        "mean": 14.3333,
+        "stddev": 12.5033,
+        "min": 0.0,
+        "max": 23.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.75",
+      "time_seconds": "+13.6",
+      "tokens": "unavailable"
+    }
+  },
+  "notes": [
+    "The updated skill passed 12 of 12 objective expectations versus 3 of 12 without the skill.",
+    "The host-harness assertions require the constrained no-key classification handoff before deterministic package reporting.",
+    "Token metadata and one baseline duration were unavailable, so token and timing deltas are not reliable quality signals."
+  ]
+}

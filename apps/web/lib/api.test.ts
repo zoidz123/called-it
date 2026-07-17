@@ -10,6 +10,10 @@ describe('resolveApiUrl', () => {
     expect(() => resolveApiUrl({ configuredUrl: '', nodeEnv: 'production' })).toThrow('Missing NEXT_PUBLIC_API_URL')
   })
 
+  test('allows an unavailable API in preview without choosing a production backend', () => {
+    expect(resolveApiUrl({ configuredUrl: '', nodeEnv: 'production', vercelEnv: 'preview' })).toBeNull()
+  })
+
   test('normalizes a configured URL', () => {
     expect(resolveApiUrl({ configuredUrl: 'https://api.example.com/' })).toBe('https://api.example.com')
   })

@@ -15,6 +15,8 @@
     "paths": {
       "@called-it/core": ["packages/core/src/index.ts"],
       "@called-it/core/*": ["packages/core/src/*"],
+      "@called-it/agent": ["packages/agent/src/index.ts"],
+      "@called-it/agent/*": ["packages/agent/src/*"],
       "@called-it/db": ["packages/db/src/index.ts"],
       "@called-it/db/*": ["packages/db/src/*"],
       "@web/*": ["apps/web/*"]

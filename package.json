@@ -11,7 +11,7 @@
   "scripts": {
     "api": "bun run apps/api/src/server.ts",
     "web": "bunx next dev apps/web -p ${WEB_PORT:-3002}",
-    "build:web": "bunx next build apps/web",
+    "build:web": "bun run scripts/validate-web-env.ts && bunx next build apps/web",
     "vercel-build": "bun run build:web && rm -rf .next && cp -R apps/web/.next .next",
     "start:web": "bunx next start apps/web -p ${WEB_PORT:-3002}",
     "start:api": "bun run apps/api/src/server.ts",
@@ -22,6 +22,7 @@
     "check": "bun run lint && bun run typecheck && bun run test && bun run build:web"
   },
   "dependencies": {
+    "@called-it/agent": "workspace:*",
     "@called-it/core": "workspace:*",
     "@called-it/db": "workspace:*",
     "@fastify/cors": "^11.2.0",

@@ -30,12 +30,17 @@ export function ScanBox({
   const [scanProgress, setScanProgress] = useState(0)
   const [modalOpen, setModalOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const canScan = isValidXInput(handle)
+  const validInput = isValidXInput(handle)
+  const canScan = Boolean(API_URL) && validInput
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (!API_URL) {
+      setInlineError('Live scanning is unavailable in this preview.')
+      return
+    }
     const clean = normalizeHandle(handle)
-    if (!canScan || !clean) {
+    if (!validInput || !clean) {
       setInlineError('Enter a valid X handle or profile URL.')
       return
     }
@@ -95,11 +100,11 @@ export function ScanBox({
           placeholder="https://x.com/ChrisCamillo"
           value={handle}
           onChange={(event) => setHandle(event.target.value)}
-          disabled={busy}
-          aria-invalid={handle.trim() ? !canScan : undefined}
+          disabled={busy || !API_URL}
+          aria-invalid={handle.trim() ? !validInput : undefined}
           suppressHydrationWarning
         />
-        <button type="submit" disabled={busy || !canScan}>{busy ? 'Scanning' : 'Scan'}</button>
+        <button type="submit" disabled={busy || !canScan}>{!API_URL ? 'Unavailable' : busy ? 'Scanning' : 'Scan'}</button>
       </form>
       <div className="scan-helper-row">
         <p>{helperText}</p>
@@ -110,6 +115,7 @@ export function ScanBox({
           </span>
         </span>
       </div>
+      {!API_URL ? <p className="status-line">Live scanning is unavailable in this preview.</p> : null}
       {inlineError ? <p className="status-line scan-error">{inlineError}</p> : null}
       {busy && !modalOpen ? (
         <button className="scan-progress-reopen" type="button" onClick={() => setModalOpen(true)}>

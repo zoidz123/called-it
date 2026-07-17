@@ -1,28 +1,19 @@
-const LOCAL_SITE_URL = 'http://127.0.0.1:3002'
+import { resolvePublicSiteUrl } from './public-env'
 
 export function resolveSiteUrl({
   configuredUrl = process.env.NEXT_PUBLIC_SITE_URL,
   nodeEnv = process.env.NODE_ENV,
+  vercelEnv = process.env.VERCEL_ENV,
+  vercelUrl = process.env.VERCEL_URL,
 }: {
   configuredUrl?: string
   nodeEnv?: string
+  vercelEnv?: string
+  vercelUrl?: string
 } = {}): URL {
-  const value = configuredUrl?.trim()
-  if (!value) {
-    if (nodeEnv === 'production') throw new Error('Missing NEXT_PUBLIC_SITE_URL')
-    return new URL(LOCAL_SITE_URL)
-  }
-
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    throw new Error('NEXT_PUBLIC_SITE_URL must be a valid URL')
-  }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-    throw new Error('NEXT_PUBLIC_SITE_URL must be an HTTP(S) URL without credentials')
-  }
-  return url
+  return resolvePublicSiteUrl({ configuredUrl, nodeEnv, vercelEnv, vercelUrl })
 }
 
-export const SITE_URL = resolveSiteUrl()
+export function getSiteUrl(): URL {
+  return resolveSiteUrl()
+}
