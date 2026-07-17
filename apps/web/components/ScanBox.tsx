@@ -162,7 +162,8 @@ export function ScanBox({
   )
 }
 
-export function precheckErrorMessage(pre: { error?: string; message?: string }) {
+export function precheckErrorMessage(pre: { error?: string; message?: string; statusCode?: number }) {
+  if (typeof pre.statusCode === 'number') return pre.message || pre.error || 'This account is not ready to scan.'
   return pre.error || pre.message || 'This account is not ready to scan.'
 }
 
