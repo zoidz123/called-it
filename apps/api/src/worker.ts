@@ -20,6 +20,7 @@ import {
   persistPriceRefresh,
   updateScanJob,
 } from '@called-it/db'
+import { TWITTER_KEY_NAMES } from './config'
 
 const IDLE_DELAY_MS = 1500
 const LOOKBACK_DAYS = Number(process.env.TWITTER_LOOKBACK_DAYS ?? 365)
@@ -30,7 +31,7 @@ type StageTiming = { stage: LatencyStage; durationMs: number; status: 'complete'
 
 export function startWorkerLoop({ concurrency = Number(process.env.SCAN_WORKER_CONCURRENCY ?? 1), workerId = crypto.randomUUID() } = {}) {
   requiredEnv('OPENAI_API_KEY')
-  requiredAnyEnv(['TWITTERAPI_IO_API_KEYS', 'TWITTERAPI_IO_API_KEY', 'TWITTERAPI_IO_FALLBACK_API_KEY', 'TWITTERAPI_IO_API_KEY_4'])
+  requiredAnyEnv(TWITTER_KEY_NAMES)
   const controllers = Array.from({ length: Math.max(1, concurrency) }, () => ({ stopped: false }))
   for (const controller of controllers) runLoop({ controller, workerId })
   return { stop: () => controllers.forEach((controller) => { controller.stopped = true }) }
