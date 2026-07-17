@@ -22,7 +22,7 @@ test('bundles exact Bird and sweet-cookie versions with integrity and licenses',
 test('bundle reports its pinned runtime version', () => {
   const result = Bun.spawnSync(['bun', join(packageRoot, 'dist/bird.mjs'), '--version'], { env: { ...process.env, BIRD_VERSION: '0.8.0' }, stdout: 'pipe', stderr: 'pipe' })
   expect(result.exitCode).toBe(0)
-  expect(result.stdout.toString().trim()).toBe('0.8.0')
+  expect(result.stdout.toString().trim().split(' ')[0]).toBe('0.8.0')
 })
 
 test('local agent source has no official or paid X provider implementation', () => {

@@ -8,6 +8,7 @@ import { confirmPurge } from '../src/purge-confirmation.mjs'
 
 const packageRoot = resolve(import.meta.dir, '..')
 const bootstrap = join(packageRoot, 'dist', 'bootstrap.mjs')
+const nodeExecutable = Bun.which('node') ?? 'node'
 const roots: string[] = []
 
 beforeAll(() => {
@@ -126,7 +127,7 @@ describe('consumer distribution', () => {
     for (const name of ['package.json', 'LICENSE', 'README.md']) cpSync(join(packageRoot, name), join(stagedPackage, name))
     cpSync(join(packageRoot, 'dist'), join(stagedPackage, 'dist'), { recursive: true })
     writeFileSync(join(stagedPackage, 'dist/skill/SKILL.md'), '\nunsafe replacement\n', { flag: 'a' })
-    const result = Bun.spawnSync([process.execPath.replace(/bun$/, 'node'), join(stagedPackage, 'dist/bootstrap.mjs'), 'install', '--target', 'codex'], {
+    const result = Bun.spawnSync([nodeExecutable, join(stagedPackage, 'dist/bootstrap.mjs'), 'install', '--target', 'codex'], {
       env: fixture.env,
       stdout: 'pipe',
       stderr: 'pipe',
@@ -205,7 +206,7 @@ function makeFixture(prefix = 'called-it-distribution-') {
 }
 
 function run(fixture: ReturnType<typeof makeFixture>, args: string[], envOverrides: Record<string, string> = {}) {
-  const result = Bun.spawnSync([process.execPath.replace(/bun$/, 'node'), bootstrap, ...args], {
+  const result = Bun.spawnSync([nodeExecutable, bootstrap, ...args], {
     env: { ...fixture.env, ...envOverrides },
     stdout: 'pipe',
     stderr: 'pipe',
