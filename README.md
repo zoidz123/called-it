@@ -68,7 +68,7 @@ Never commit a populated environment file, Neon link file, provider credential, 
 | `NEXT_PUBLIC_SITE_URL` | Production web build | Canonical public URL used for metadata and share images. |
 | `CORS_ORIGIN` | Production API | Comma-separated browser origins allowed to call the API. |
 
-The scanner also accepts one key through `TWITTERAPI_IO_API_KEY` or `TWITTERAPI_IO_FALLBACK_API_KEY`.
+The scanner also accepts one key through `TWITTERAPI_IO_API_KEY`, `TWITTERAPI_IO_FALLBACK_API_KEY`, or the legacy `TWITTERAPI_IO_API_KEY_4` alias.
 Common optional controls include `API_PORT`, `WEB_PORT`, `SCAN_WORKER_ENABLED`, `TWITTER_LOOKBACK_DAYS`, `TWITTER_WINDOW_DAYS`, `TWITTER_MAX_PAGES_PER_WINDOW`, `TWITTERAPI_IO_FETCH_CONCURRENCY`, `OPENAI_MODEL`, `OPENAI_CLASSIFY_BATCH_SIZE`, `OPENAI_CLASSIFY_CONCURRENCY`, and `PRICING_CONCURRENCY`.
 See the provider adapters for the remaining tuning controls.
 
