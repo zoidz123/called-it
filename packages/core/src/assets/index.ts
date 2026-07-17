@@ -149,10 +149,11 @@ async function getCandidates(raw: string): Promise<AssetCandidate[]> {
 }
 
 async function yahooSearch(raw: string): Promise<AssetCandidate[]> {
-  if (!yahooSearchCache.has(raw)) {
-    yahooSearchCache.set(raw, fetchYahooSearch(raw))
-  }
-  return yahooSearchCache.get(raw)!
+  const cached = yahooSearchCache.get(raw)
+  if (cached) return cached
+  const request = fetchYahooSearch(raw)
+  yahooSearchCache.set(raw, request)
+  return request
 }
 
 async function fetchYahooSearch(raw: string): Promise<AssetCandidate[]> {

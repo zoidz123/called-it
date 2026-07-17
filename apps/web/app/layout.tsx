@@ -1,12 +1,13 @@
 import './globals.css'
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
+import { SITE_URL } from '../lib/site'
 
 const description = 'Find the traders who spotted the move early.'
 const ogImage = '/og-image.png?v=052886a'
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://www.calledit.site'),
+  metadataBase: SITE_URL,
   title: 'Called It',
   applicationName: 'Called It',
   description,
@@ -40,9 +41,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <body>
         {children}
-        <footer className="site-footer">
-          Built by <a href="https://x.com/Mysterious35725" target="_blank" rel="noreferrer">Mysterious35725</a>
-        </footer>
       </body>
     </html>
   )

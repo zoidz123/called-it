@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { API_URL } from '../lib/api'
 
 type Job = {
@@ -49,7 +49,7 @@ export function ScanBox({
         window.location.href = `/u/${pre.handle ?? clean}`
         return
       } else {
-        if (!pre.ok) throw new Error(pre.message || 'This account is not ready to scan.')
+        if (!pre.ok) throw new Error(precheckErrorMessage(pre))
         setScanMessage('Starting scan...')
       }
       setScanProgress(5)
@@ -91,6 +91,7 @@ export function ScanBox({
       <form className="scan-form" onSubmit={submit}>
         <input
           aria-label="X handle"
+          name="handle"
           placeholder="https://x.com/ChrisCamillo"
           value={handle}
           onChange={(event) => setHandle(event.target.value)}
@@ -137,7 +138,14 @@ export function ScanBox({
                 X
               </button>
             </div>
-            <div className="scan-progress-meter" aria-label={`Scan ${scanProgress}% complete`}>
+            <div
+              className="scan-progress-meter"
+              role="progressbar"
+              aria-label="Scan progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={scanProgress}
+            >
               <span style={{ width: `${scanProgress}%` }} />
             </div>
             <div className="scan-modal-status">
@@ -152,6 +160,11 @@ export function ScanBox({
       ) : null}
     </section>
   )
+}
+
+export function precheckErrorMessage(pre: { error?: string; message?: string; statusCode?: number }) {
+  if (typeof pre.statusCode === 'number') return pre.message || pre.error || 'This account is not ready to scan.'
+  return pre.error || pre.message || 'This account is not ready to scan.'
 }
 
 function clampProgress(value: number) {
@@ -172,7 +185,7 @@ function normalizeHandle(input: string) {
     const host = url.hostname.replace(/^www\./, '').toLowerCase()
     if (host !== 'x.com' && host !== 'twitter.com') return ''
     handle = url.pathname.split('/').filter(Boolean)[0] ?? ''
-  } catch (error) {
+  } catch {
     if (trimmed.includes('://')) return ''
   }
   handle = handle.replace(/^@/, '').trim()

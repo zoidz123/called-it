@@ -34,3 +34,11 @@ export function optionalEnv(name: string): string | undefined {
   loadLocalEnv()
   return process.env[name]?.trim() || undefined
 }
+
+export function requiredAnyEnv(names: string[]): string {
+  for (const name of names) {
+    const value = optionalEnv(name)
+    if (value) return value
+  }
+  throw new Error(`Missing one of: ${names.join(', ')}`)
+}

@@ -29,7 +29,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
         {data.leaderboard.length ? <Leaderboard initialRows={data.leaderboard} sort={sort} /> : (
           <div className="empty home-empty">
             <a href="#scan">No ranked traders yet.</a>
-            <p>Run the first 30-day scan and get someone on the board.</p>
+            <p>Run the first scan and get someone on the board.</p>
           </div>
         )}
       </section>

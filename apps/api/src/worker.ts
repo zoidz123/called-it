@@ -1,6 +1,16 @@
 import crypto from 'node:crypto'
 import { performance } from 'node:perf_hooks'
-import { candidatesFromTweets, classifyCandidates, filterIgnoredCashtags, getAuthorTimeline, getXUser, refreshExistingCallPrices, scoreCalls } from '@called-it/core'
+import {
+  candidatesFromTweets,
+  classifyCandidates,
+  filterIgnoredCashtags,
+  getAuthorTimeline,
+  getXUser,
+  refreshExistingCallPrices,
+  requiredAnyEnv,
+  requiredEnv,
+  scoreCalls,
+} from '@called-it/core'
 import {
   claimNextScanJob,
   completeScanJob,
@@ -10,6 +20,7 @@ import {
   persistPriceRefresh,
   updateScanJob,
 } from '@called-it/db'
+import { TWITTER_KEY_NAMES } from './config'
 
 const IDLE_DELAY_MS = 1500
 const LOOKBACK_DAYS = Number(process.env.TWITTER_LOOKBACK_DAYS ?? 365)
@@ -19,6 +30,8 @@ type LatencyStage = (typeof LATENCY_STAGES)[number]
 type StageTiming = { stage: LatencyStage; durationMs: number; status: 'complete' | 'failed' }
 
 export function startWorkerLoop({ concurrency = Number(process.env.SCAN_WORKER_CONCURRENCY ?? 1), workerId = crypto.randomUUID() } = {}) {
+  requiredEnv('OPENAI_API_KEY')
+  requiredAnyEnv(TWITTER_KEY_NAMES)
   const controllers = Array.from({ length: Math.max(1, concurrency) }, () => ({ stopped: false }))
   for (const controller of controllers) runLoop({ controller, workerId })
   return { stop: () => controllers.forEach((controller) => { controller.stopped = true }) }

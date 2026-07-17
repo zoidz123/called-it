@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { optionalEnv, requiredEnv } from '../env'
 import type { ClassifiedTweet, RawStance, TweetCandidate } from '../types'
@@ -112,7 +112,8 @@ export function filterIgnoredCashtags(handle: string, tweets: ClassifiedTweet[])
 function loadLocalClassificationCache(): Map<string, RawStance[]> {
   const out = new Map<string, RawStance[]>()
   const dir = resolve(process.cwd(), '.cache/twitter')
-  for (const file of ['aleabitoreddit.llm.json', 'blknoiz06.llm.json']) {
+  if (!existsSync(dir)) return out
+  for (const file of readdirSync(dir).filter((name) => name.endsWith('.llm.json'))) {
     const path = resolve(dir, file)
     if (!existsSync(path)) continue
     try {
@@ -146,10 +147,7 @@ export function normalizeAsset(asset: string): string {
 
 function ignoredCashtagsForHandle(handle: string): Set<string> {
   const normalizedHandle = String(handle ?? '').trim().toLowerCase()
-  const defaults: Record<string, string[]> = {
-    blknoiz06: ['$BULL'],
-  }
-  const out = new Set((defaults[normalizedHandle] ?? []).map(normalizeAsset))
+  const out = new Set<string>()
   const rawConfig = optionalEnv('IGNORED_CASTAGS_BY_HANDLE') ?? optionalEnv('IGNORED_CASHTAGS_BY_HANDLE') ?? ''
   for (const rule of rawConfig.split(';')) {
     const [rawHandle, rawAssets] = rule.split(':')
