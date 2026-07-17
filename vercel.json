@@ -1,5 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "perch/prepare-called-it-for-3489": false
+    }
+  },
   "framework": "nextjs",
   "installCommand": "bun install --frozen-lockfile",
   "buildCommand": "bun run build:web",
