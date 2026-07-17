@@ -107,6 +107,8 @@ bun run check
 | [`railway.json`](railway.json) | Example API deployment configuration. |
 | [`vercel.json`](vercel.json) | Example web deployment configuration. |
 
+`vercel.json` disables automatic Vercel deployments for the `perch/prepare-called-it-for-3489` hardening branch through `git.deploymentEnabled`; all other branches deploy normally.
+
 ## Scoring, privacy, and operational limits
 
 - Classification is probabilistic and conservative, but it can still miss context, sarcasm, deleted posts, position sizing, exits, or hedges.
