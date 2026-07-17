@@ -94,6 +94,9 @@ async function scanAccount(runId: string, handle: string, pageBudget: number, op
     options.store.initializeCursor(handle, 'tail', options.principalHash, firstHeadNextCursor, nowIso(options))
     tail = options.store.getCursor(handle, 'tail')
   }
+  if (tail?.oldest_post_at && tail.oldest_post_at <= options.requestedFrom) {
+    return finalize('complete', 'lookback_reached', runId, handle, committedPages, committedPosts, retries, options)
+  }
   const tailCursorFromLedger = Boolean(tail)
   let tailCursor = tailCursorFromLedger ? tail?.opaque_tail_cursor ?? null : firstHeadNextCursor
   if (!tailCursor) return finalize('complete', 'bird_exhausted', runId, handle, committedPages, committedPosts, retries, options)

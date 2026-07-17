@@ -65,12 +65,12 @@ describe('resumable scan ledger', () => {
     const firstTen = Array.from({ length: 10 }, (_, index) => normalized(`30${index}`, `2026-07-${String(16 - index).padStart(2, '0')}`))
     const secondTen = Array.from({ length: 10 }, (_, index) => normalized(`40${index}`, `2026-06-${String(28 - index).padStart(2, '0')}`))
     seedPosts(store, 'alpha', [...firstTen, ...secondTen])
-    store.initializeCursor('alpha', 'tail', 'principal', null, '2026-07-17T00:00:00.000Z')
+    seedTailCoverage(store, 'alpha', normalized('299', '2025-12-31'))
     const result = await ingestHandles(['alpha'], options(store, queuedRunner([
       page(firstTen.map(raw), 'head-2'),
-      page(secondTen.map(raw)),
+      page(secondTen.map(raw), 'head-3'),
     ])))
-    expect(result.results[0]).toMatchObject({ status: 'complete', committedPages: 2, stopReason: 'bird_exhausted' })
+    expect(result.results[0]).toMatchObject({ status: 'complete', committedPages: 2, stopReason: 'lookback_reached' })
   }))
 
   test('stops repeated cursors and unexplained empty pages as resumable partial gaps', async () => {
@@ -187,6 +187,25 @@ function seedPosts(store: AgentStore, handle: string, posts: NormalizedPost[], r
     outputCursor: null,
     attempt: 1,
     posts,
+    principalHash: 'principal',
+    knownBefore: store.knownPostIds(handle),
+    overlapKnownCount: 0,
+    overlapConsecutivePages: 0,
+    requestedFrom: '2026-01-01T00:00:00.000Z',
+    requestedTo: '2026-07-17T00:00:00.000Z',
+    now: '2026-07-17T00:00:00.000Z',
+  })
+}
+
+function seedTailCoverage(store: AgentStore, handle: string, post: NormalizedPost) {
+  store.commitPage({
+    runId: 'seed-tail-run',
+    handle,
+    stream: 'tail',
+    inputCursor: 'seed-tail-input',
+    outputCursor: 'seed-tail-output',
+    attempt: 1,
+    posts: [post],
     principalHash: 'principal',
     knownBefore: store.knownPostIds(handle),
     overlapKnownCount: 0,
