@@ -21,6 +21,42 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
         </div>
       </header>
 
+      <section className="home-description" aria-labelledby="project-description-title">
+        <div className="home-description-copy">
+          <p className="home-description-eyebrow">What Called It does</p>
+          <h2 id="project-description-title">Turn public ticker calls into price-backed scorecards.</h2>
+          <p>
+            Called It is for anyone who wants to inspect how public bullish and bearish calls played out after they were posted.
+          </p>
+        </div>
+        <ol className="home-description-steps">
+          <li>
+            <span aria-hidden="true">1</span>
+            <div>
+              <h3>Scan a public profile</h3>
+              <p>Enter an X handle to review public stock and crypto ticker mentions from the past year.</p>
+            </div>
+          </li>
+          <li>
+            <span aria-hidden="true">2</span>
+            <div>
+              <h3>Identify the calls</h3>
+              <p>Called It filters for high-conviction bullish or bearish stances and finds the supporting posts.</p>
+            </div>
+          </li>
+          <li>
+            <span aria-hidden="true">3</span>
+            <div>
+              <h3>Compare what happened</h3>
+              <p>Price moves become direction-adjusted scorecards with call history and leaderboard placement.</p>
+            </div>
+          </li>
+        </ol>
+        <p className="home-description-note">
+          A scorecard measures public directional calls, not a full portfolio, realized profit, or investment advice.
+        </p>
+      </section>
+
       <section className="home-board">
         <div className="home-board-head">
           <div>
