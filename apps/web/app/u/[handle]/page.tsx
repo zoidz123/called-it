@@ -14,12 +14,11 @@ export const dynamic = 'force-dynamic'
 export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }): Promise<Metadata> {
   const { handle } = await params
   const scorecard = await loadScorecard(handle).catch(() => null)
-  const displayHandle = scorecard?.user.handle ?? handle.replace(/^@/, '')
   const title = profileTitle(scorecard?.user)
   const description = scorecard
     ? `${formatPct(scorecard.user.avg_return ?? 0)} avg move, ${Math.round((scorecard.user.hit_rate ?? 0) * 100)}% hit rate across public ticker calls.`
     : 'Find the traders who spotted the move early.'
-  const image = `/u/${encodeURIComponent(displayHandle)}/opengraph-image?v=${shareImageVersion(scorecard)}`
+  const image = `/u/${encodeURIComponent(scorecard?.user.handle ?? handle.replace(/^@/, ''))}/opengraph-image?v=${shareImageVersion(scorecard)}`
 
   return {
     title,
