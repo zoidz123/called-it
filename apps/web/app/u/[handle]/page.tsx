@@ -6,6 +6,7 @@ import { apiGet } from '../../../lib/api'
 import { formatNumber, formatPct } from '../../../lib/format'
 import { buildAssetRows, formatDate, topShareRows, type Scorecard, type ShareCallRow } from '../../../lib/scorecard'
 import { getSiteUrl } from '../../../lib/site'
+import { ProfileCopyButton } from '../../../components/ProfileCopyButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,7 +99,8 @@ function ShareImageCard({ data, rows }: { data: Scorecard; rows: ShareCallRow[] 
         </div>
         <div className="share-image-actions">
           <a href={xShareUrl} target="_blank" rel="noreferrer">Share on X</a>
-          <a href={imageUrl} download={`called-it-${user.handle}-scorecard-2x.png`}>Download image</a>
+          <a className="share-image-action-secondary" href={imageUrl} download={`called-it-${user.handle}-scorecard-2x.png`}>Download image</a>
+          <ProfileCopyButton profileUrl={profileUrl} />
         </div>
       </div>
       <div className="share-image-card">
