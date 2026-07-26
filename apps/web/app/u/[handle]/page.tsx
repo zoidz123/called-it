@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { cache } from 'react'
 import { ProfileTradeContext } from '../../../components/ProfileTradeContext'
 import { ProfileAutoRefresh } from '../../../components/ProfileAutoRefresh'
 import { Avatar } from '../../../components/Avatar'
@@ -6,6 +7,7 @@ import { apiGet } from '../../../lib/api'
 import { formatNumber, formatPct } from '../../../lib/format'
 import { buildAssetRows, formatDate, topShareRows, type Scorecard, type ShareCallRow } from '../../../lib/scorecard'
 import { getSiteUrl } from '../../../lib/site'
+import { profileTitle } from '../../../lib/profile-title'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,9 +15,7 @@ export async function generateMetadata({ params }: { params: Promise<{ handle: s
   const { handle } = await params
   const scorecard = await loadScorecard(handle).catch(() => null)
   const displayHandle = scorecard?.user.handle ?? handle.replace(/^@/, '')
-  const title = scorecard
-    ? `${scorecard.user.name} (@${scorecard.user.handle}) on Called It`
-    : `@${displayHandle} on Called It`
+  const title = profileTitle(scorecard?.user)
   const description = scorecard
     ? `${formatPct(scorecard.user.avg_return ?? 0)} avg move, ${Math.round((scorecard.user.hit_rate ?? 0) * 100)}% hit rate across public ticker calls.`
     : 'Find the traders who spotted the move early.'
@@ -71,12 +71,12 @@ export default async function Profile({ params }: { params: Promise<{ handle: st
   )
 }
 
-async function loadScorecard(handle: string) {
+const loadScorecard = cache(async (handle: string) => {
   const data = await apiGet<Scorecard>(`/api/users/${encodeURIComponent(handle)}?tweets=0`)
   data.calls ??= []
   data.assets ??= []
   return data
-}
+})
 
 function ShareImageCard({ data, rows }: { data: Scorecard; rows: ShareCallRow[] }) {
   const { user } = data
