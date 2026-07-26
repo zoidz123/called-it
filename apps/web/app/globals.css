@@ -956,7 +956,9 @@ a {
   justify-content: flex-end;
 }
 
-.share-image-actions a {
+.share-image-actions :is(a, button) {
+  appearance: none;
+  cursor: pointer;
   display: inline-grid;
   place-items: center;
   min-height: 38px;
@@ -965,15 +967,36 @@ a {
   border-radius: 10px;
   background: var(--brand-yellow);
   color: var(--ink);
+  font: inherit;
   font-size: 13px;
   font-weight: 900;
   text-decoration: none;
   box-shadow: 0 3px 0 var(--ink);
 }
 
-.share-image-actions a:last-child {
+.share-image-actions .share-image-action-secondary,
+.share-image-actions .share-copy-profile-link {
   background: var(--paper);
   color: #4f4635;
+}
+
+.share-image-actions :is(a, button):focus-visible {
+  outline: 3px solid #00e;
+  outline-offset: 2px;
+}
+
+.share-copy-profile-link {
+  min-width: 154px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .share-image-card {
