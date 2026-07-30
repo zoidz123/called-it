@@ -1,3 +1,4 @@
+import { AboutSection } from '../components/AboutSection'
 import { Leaderboard, type LeaderboardRow } from '../components/Leaderboard'
 import { ScanBox } from '../components/ScanBox'
 import { API_URL, apiGet } from '../lib/api'
@@ -39,6 +40,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
           </div>
         )}
       </section>
+
+      <AboutSection />
     </main>
   )
 }
