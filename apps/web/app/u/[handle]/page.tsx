@@ -1,12 +1,14 @@
 import type { Metadata } from 'next'
-import { ProfileTradeContext } from '../../../components/ProfileTradeContext'
+import { AssetBoard } from '../../../components/AssetBoard'
 import { ProfileAutoRefresh } from '../../../components/ProfileAutoRefresh'
 import { Avatar } from '../../../components/Avatar'
 import { apiGet } from '../../../lib/api'
 import { formatNumber, formatPct } from '../../../lib/format'
-import { buildAssetRows, formatDate, topShareRows, type Scorecard, type ShareCallRow } from '../../../lib/scorecard'
+import { buildAssetRows, formatDate, HORIZONS, money, parseHorizon, recentResults, resultCurve, type Horizon, type Scorecard } from '../../../lib/scorecard'
+import { HoldControl, HoldQuestion } from '../../../components/HoldSentence'
+import { ResultCurve } from '../../../components/ResultCurve'
+import { Streak } from '../../../components/Streak'
 import { getSiteUrl } from '../../../lib/site'
-import { ProfileCopyButton } from '../../../components/ProfileCopyButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +20,7 @@ export async function generateMetadata({ params }: { params: Promise<{ handle: s
     ? `${scorecard.user.name} (@${scorecard.user.handle}) on Called It`
     : `@${displayHandle} on Called It`
   const description = scorecard
-    ? `${formatPct(scorecard.user.avg_return ?? 0)} avg move, ${Math.round((scorecard.user.hit_rate ?? 0) * 100)}% hit rate across public ticker calls.`
+    ? `$1,000 into each public call became ${money(scorecard.user.avg_return_30d ?? 0)} 30 days later.`
     : 'Find the traders who spotted the move early.'
   const image = `/u/${encodeURIComponent(displayHandle)}/opengraph-image?v=${shareImageVersion(scorecard)}`
 
@@ -40,28 +42,22 @@ export async function generateMetadata({ params }: { params: Promise<{ handle: s
   }
 }
 
-export default async function Profile({ params }: { params: Promise<{ handle: string }> }) {
+export default async function Profile({ params, searchParams }: { params: Promise<{ handle: string }>; searchParams: Promise<{ h?: string }> }) {
   const { handle } = await params
+  const horizon = parseHorizon((await searchParams).h)
   const data = await loadScorecard(handle)
   data.calls ??= []
   const user = data.user
-  const assetRows = buildAssetRows(data)
-  const shareRows = topShareRows(assetRows, 3)
 
   return (
     <main className="calls-page">
-      <header className="calls-header">
-        <div className="profile-header-copy">
-          <a className="calls-logo" href="/">Called It</a>
-        </div>
-      </header>
+      <ProfileHead data={data} horizon={horizon} />
 
-      <ShareImageCard data={data} rows={shareRows} />
-
-      <ProfileTradeContext
-        assetRows={assetRows}
+      <AssetBoard
+        assetRows={buildAssetRows(data)}
         handle={user.handle}
-        updatedLabel={data.scan?.finished_at ? `Updated ${formatDate(data.scan.finished_at)}` : 'Scanning 30D'}
+        horizon={horizon}
+        updatedLabel={data.scan?.finished_at ? `Updated ${formatDate(data.scan.finished_at)}` : 'Scanning'}
       />
       <ProfileAutoRefresh
         handle={user.handle}
@@ -79,84 +75,87 @@ async function loadScorecard(handle: string) {
   return data
 }
 
-function ShareImageCard({ data, rows }: { data: Scorecard; rows: ShareCallRow[] }) {
+// The one-glance answer: what following this account's calls returned at this horizon.
+function ProfileHead({ data, horizon }: { data: Scorecard; horizon: Horizon }) {
   const { user } = data
   const profileUrl = new URL(`/u/${encodeURIComponent(user.handle)}`, getSiteUrl()).toString()
   const imageUrl = `/u/${encodeURIComponent(user.handle)}/opengraph-image?v=${shareImageVersion(data)}`
+  const shareCalls = user.calls_30d ?? 0
+  const shareWins = Math.round((user.hit_rate_30d ?? 0) * shareCalls)
   const shareText = [
     `${user.name}'s Called It scorecard`,
-    `${formatPct(user.avg_return ?? 0)} avg move · ${Math.round((user.hit_rate ?? 0) * 100)}% hit rate`,
-    rows[0] ? `Best call: ${rows[0].action} ${rows[0].asset} ${formatPct(rows[0].returnPct)}` : null,
+    shareCalls > 0 ? `$1,000 into each call became ${money(user.avg_return_30d ?? 0)} 30 days later · ${shareWins}-${shareCalls - shareWins} record` : null,
   ].filter(Boolean).join('\n')
   const xShareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(profileUrl)}`
+  const calls = user[`calls_${horizon}d`] ?? 0
+  const wins = Math.round((user[`hit_rate_${horizon}d`] ?? 0) * calls)
+  const avg = user[`avg_return_${horizon}d`] ?? 0
+  const firstCall = data.calls.map((call) => call.first_pitch_at).sort()[0]
+  const since = firstCall ? new Date(firstCall).toLocaleDateString('en', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : undefined
 
   return (
-    <section className="share-image-shell" aria-label="Share card">
-      <div className="share-image-copy">
+    <section className="profile-head" aria-label="Profile">
+      <div className="profile-id">
+        <Avatar src={user.avatar_url} name={user.name} />
         <div>
-          <h2>Share card</h2>
-          <p>Top stats and the best 3 calls, built for the X preview.</p>
+          <h1>{user.name}</h1>
+          <p>@{user.handle} · {formatNumber(user.followers)} followers</p>
         </div>
         <div className="share-image-actions">
           <a href={xShareUrl} target="_blank" rel="noreferrer">Share on X</a>
           <a className="share-image-action-secondary" href={imageUrl} download={`called-it-${user.handle}-scorecard-2x.png`}>Download image</a>
-          <ProfileCopyButton profileUrl={profileUrl} />
         </div>
       </div>
-      <div className="share-image-card">
-        <div className="share-card-brand">Called It</div>
-        <div className="share-card-main">
-          <div className="share-card-profile">
-            <Avatar src={user.avatar_url} name={user.name} />
-            <div>
-              <h3>{user.name}</h3>
-              <p>@{user.handle} · {formatNumber(user.followers)} followers</p>
-            </div>
+      <div className="profile-hold">
+        <HoldQuestion horizon={horizon} since={since} />
+        <HoldControl horizon={horizon} hrefFor={(days) => `/u/${user.handle}?h=${days}`} />
+      </div>
+      <div className="profile-hero">
+        <div className="profile-result">
+          <div>
+            <span className="label">$1,000 became, after {horizon} days</span>
+            {calls > 0 ? (
+              <>
+                <b className={`profile-money ${avg >= 0 ? 'good' : 'bad'}`}>{money(avg)}</b>
+                <span className={`profile-delta ${avg >= 0 ? 'good' : 'bad'}`}>{formatPct(avg)} per call</span>
+              </>
+            ) : (
+              <>
+                <b className="profile-money">-</b>
+                <p>No call is {horizon} days old yet.</p>
+              </>
+            )}
           </div>
-          <div className="share-card-stats">
-            <ShareStat label="Avg move" value={formatPct(user.avg_return ?? 0)} tone={(user.avg_return ?? 0) >= 0 ? 'good' : 'bad'} />
-            <ShareStat label="Median" value={formatPct(user.median_return ?? 0)} tone={(user.median_return ?? 0) >= 0 ? 'good' : 'bad'} />
-            <ShareStat label="Hit rate" value={`${Math.round((user.hit_rate ?? 0) * 100)}%`} />
-            <ShareStat label="Hits" value={`${user.calls_up}/${user.calls_total}`} />
+          <dl className="profile-figures">
+            <div>
+              <dt>Wins-losses</dt>
+              <dd>{calls > 0 ? `${wins}-${calls - wins}` : '-'}</dd>
+            </div>
+            <div>
+              <dt>Win rate</dt>
+              <dd>{calls > 0 ? `${Math.round((wins / calls) * 100)}%` : '-'}</dd>
+            </div>
+          </dl>
+          <div>
+            <span className="label">Last 10 calls</span>
+            <Streak results={recentResults(data.calls, horizon)} />
           </div>
         </div>
-        <div className="share-card-calls">
-          {rows.length ? rows.map((row, index) => (
-            <div className="share-card-call" key={`${row.asset}-${row.direction}-${row.firstPitchAt}`}>
-              <span className="share-card-rank">#{index + 1}</span>
-              <span className={`share-card-action ${row.direction === 'BEAR' ? 'bear' : 'bull'}`}>{row.action}</span>
-              <b>{row.asset}</b>
-              <strong className={row.returnPct >= 0 ? 'good' : 'bad'}>{formatPct(row.returnPct)}</strong>
-              <small>First mentioned {formatDate(row.firstPitchAt)}</small>
-            </div>
-          )) : (
-            <p className="share-card-empty">No priced calls yet.</p>
-          )}
+        <div className="profile-curve">
+          <span className="label">Running result after each call</span>
+          <ResultCurve points={resultCurve(data.calls, horizon)} />
         </div>
       </div>
     </section>
   )
 }
 
-function ShareStat({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' }) {
-  return (
-    <div>
-      <span>{label}</span>
-      <b className={tone}>{value}</b>
-    </div>
-  )
-}
-
 function shareImageVersion(data: Scorecard | null) {
   if (!data) return 'pending'
   const { user } = data
-  const stamp = user.computed_at ?? data.scan?.finished_at ?? 'pending'
   return encodeURIComponent([
-    stamp,
-    user.calls_up ?? 0,
-    user.calls_total ?? 0,
-    Math.round((user.avg_return ?? 0) * 10000),
-    Math.round((user.median_return ?? 0) * 10000),
+    user.computed_at ?? data.scan?.finished_at ?? 'pending',
+    ...HORIZONS.flatMap((days) => [user[`calls_${days}d`] ?? 0, Math.round((user[`avg_return_${days}d`] ?? 0) * 10000)]),
   ].join(':'))
 }
 

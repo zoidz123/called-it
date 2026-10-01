@@ -9,6 +9,7 @@ type Window = { start: Date; end: Date }
 
 const BASE = optionalEnv('TWITTERAPI_IO_BASE_URL') ?? 'https://api.twitterapi.io'
 const CREDIT_COOLDOWN_MS = 60 * 60 * 1000
+const MAX_KEY_WAIT_MS = 60 * 1000
 const SPLIT_DURATIONS_MS = [24 * 60 * 60 * 1000, 6 * 60 * 60 * 1000, 60 * 60 * 1000]
 const DEFAULT_DENSE_PROBE_PAGES = 4
 
@@ -326,10 +327,12 @@ async function callTwitterApi(path: string, params: Record<string, string | unde
     if (response.ok && payload?.status !== 'error') return payload
     const message = payload?.message ?? payload?.msg ?? payload?.error ?? `TwitterAPI.io ${response.status}`
     lastError = new Error(String(message))
-    if (response.status !== 429 && response.status < 500 && payload?.status !== 'error') throw lastError
+    const exhausted = isKeyExhaustion(response.status, message)
+    if (!exhausted && response.status < 500 && payload?.status !== 'error') throw lastError
     const delay = retryDelay(response, attempt)
-    if (isKeyExhaustion(response.status, message)) scheduler.coolDown(reservation.keyId, response.status === 429 ? delay : CREDIT_COOLDOWN_MS)
-    await sleep(delay)
+    if (exhausted) scheduler.coolDown(reservation.keyId, response.status === 429 ? delay : CREDIT_COOLDOWN_MS)
+    // A key with no credits is parked, so the retry can go straight to the next key.
+    if (response.status === 429 || !exhausted) await sleep(delay)
   }
   throw lastError ?? new Error('TwitterAPI.io request failed')
 }
@@ -358,6 +361,8 @@ function createRequestScheduler(apiKeys: string[], { fallbackApiKey, minInterval
         const candidates = primary.length ? primary : states
         const state = candidates.reduce((a, b) => a.nextRequestAt < b.nextRequestAt ? a : b)
         const wait = Math.max(0, state.nextRequestAt - now)
+        // Every key is parked: fail the scan now instead of holding the queue until a cooldown ends.
+        if (wait > MAX_KEY_WAIT_MS) throw new Error('All TwitterAPI.io keys are out of credits or rate limited. Top up and retry.')
         state.nextRequestAt = Math.max(now, state.nextRequestAt) + minIntervalMs
         if (wait) await sleep(wait)
         return { apiKey: state.apiKey, keyId: state.keyId }
@@ -381,7 +386,7 @@ function retryDelay(response: Response, attempt: number): number {
 }
 
 function isKeyExhaustion(status: number, message: string) {
-  return status === 429 || /\b(rate.?limit|too many|credit|quota|balance|insufficient|recharge)\b/i.test(message)
+  return status === 429 || status === 402 || /\b(rate.?limit|too many|credit|quota|balance|insufficient|recharge)\b/i.test(message)
 }
 
 function sleep(ms: number) {

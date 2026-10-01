@@ -1,3 +1,10 @@
+export const HORIZONS = [7, 30, 90] as const
+export type Horizon = (typeof HORIZONS)[number]
+
+type HorizonUserStats = {
+  [K in Horizon as `avg_return_${K}d` | `median_return_${K}d` | `hit_rate_${K}d` | `calls_${K}d`]: number
+}
+
 export type Scorecard = {
   user: {
     handle: string
@@ -5,13 +12,8 @@ export type Scorecard = {
     avatar_url: string | null
     bio: string | null
     followers: number
-    avg_return: number
-    median_return: number
-    hit_rate: number
-    calls_total: number
-    calls_up: number
     computed_at?: string
-  }
+  } & HorizonUserStats
   refresh?: {
     price?: {
       oldestPricedAt?: string
@@ -34,17 +36,16 @@ export type Scorecard = {
     priced_calls: number
     finished_at: string
   }
+  // One row per call: one post's stance on one asset.
   calls: {
     asset: string
     direction: 'BULL' | 'BEAR'
     asset_class: string
     first_pitch_at: string
-    entry_price: number
-    current_price: number
-    return_pct: number
+    return_7d: number | null
+    return_30d: number | null
+    return_90d: number | null
     mentions: number
-    bulls: number
-    bears: number
   }[]
   assets: {
     asset: string
@@ -53,44 +54,31 @@ export type Scorecard = {
     bears: number
     first_pitch_at: string
   }[]
-  tweets: {
-    tweet_id: string
-    text: string
-    created_at: string
-    url: string
-    stances: { asset: string; direction: 'BULL' | 'BEAR'; conviction: number }[]
-  }[]
 }
 
 export type AssetRow = {
   id: string
   asset: string
-  total: number
-  stanceLabel: string
+  callouts: number
+  bulls: number
+  bears: number
   firstPitchAt: string
-  legs: PriceLeg[]
+  priced: boolean
+  // How this asset's calls played out N days later, over the calls that have reached that horizon.
+  horizons: Record<Horizon, CallRecord>
 }
 
-export type PriceLeg = {
-  id: string
-  direction: 'BULL' | 'BEAR'
-  startAt: string
-  endAt: string | null
-  startPrice: number
-  endPrice: number
-  returnPct: number
-  isCurrent: boolean
-}
+export type CallRecord = { wins: number; losses: number; avg: number | null }
 
 export type ShareCallRow = {
   asset: string
   action: 'BUY' | 'SELL'
   direction: 'BULL' | 'BEAR'
   returnPct: number
-  mentions: number
   firstPitchAt: string
 }
 
+// One row per asset, busiest first. Assets with stances but no price history sit at the bottom as unpriced.
 export function buildAssetRows(data: Scorecard): AssetRow[] {
   const callsByAsset = new Map<string, Scorecard['calls']>()
   for (const call of data.calls ?? []) {
@@ -98,98 +86,63 @@ export function buildAssetRows(data: Scorecard): AssetRow[] {
     callsByAsset.set(ticker, [...(callsByAsset.get(ticker) ?? []), call])
   }
 
-  const rowsFromCalls = [...callsByAsset.entries()].map(([ticker, calls]) => {
-    const sortedCalls = calls
-      .slice()
-      .sort((a, b) => new Date(a.first_pitch_at).getTime() - new Date(b.first_pitch_at).getTime())
-    const first = sortedCalls[0]
+  const priced = [...callsByAsset.entries()].map(([ticker, calls]): AssetRow => {
+    const posts = (direction: 'BULL' | 'BEAR') => calls
+      .filter((call) => call.direction === direction)
+      .reduce((sum, call) => sum + call.mentions, 0)
     return {
       id: ticker,
       asset: ticker,
-      total: first?.mentions ?? 0,
-      stanceLabel: sortedCalls.map((call) => call.direction).join(' -> '),
-      firstPitchAt: first?.first_pitch_at ?? '',
-      legs: buildPriceLegs(sortedCalls),
+      callouts: posts('BULL') + posts('BEAR'),
+      bulls: posts('BULL'),
+      bears: posts('BEAR'),
+      firstPitchAt: calls.map((call) => call.first_pitch_at).sort()[0] ?? '',
+      priced: true,
+      horizons: {
+        7: callRecord(calls.map((call) => call.return_7d)),
+        30: callRecord(calls.map((call) => call.return_30d)),
+        90: callRecord(calls.map((call) => call.return_90d)),
+      },
     }
   })
 
-  const pricedAssets = new Set(rowsFromCalls.map((row) => row.asset))
-  const unpricedRows = (data.assets ?? [])
-    .filter((asset) => !pricedAssets.has(normalizeTicker(asset.asset)))
-    .map((asset) => {
-      const ticker = normalizeTicker(asset.asset)
-      return {
-        id: `${ticker}:UNPRICED`,
-        asset: ticker,
-        total: asset.total,
-        stanceLabel: asset.bears > asset.bulls ? 'BEAR' : 'BULL',
-        firstPitchAt: asset.first_pitch_at,
-        legs: [],
-      }
+  const unpriced = (data.assets ?? [])
+    .filter((asset) => !callsByAsset.has(normalizeTicker(asset.asset)))
+    .map((asset): AssetRow => ({
+      id: `${normalizeTicker(asset.asset)}:UNPRICED`,
+      asset: normalizeTicker(asset.asset),
+      callouts: asset.total,
+      bulls: asset.bulls,
+      bears: asset.bears,
+      firstPitchAt: asset.first_pitch_at,
+      priced: false,
+      horizons: { 7: callRecord([]), 30: callRecord([]), 90: callRecord([]) },
+    }))
+
+  const byActivity = (a: AssetRow, b: AssetRow) => b.callouts - a.callouts || a.asset.localeCompare(b.asset)
+  return [...priced.sort(byActivity), ...unpriced.sort(byActivity)]
+}
+
+// The best calls by their move N days later.
+export function topShareRows(calls: Scorecard['calls'], limit = 3, days: Horizon = 30): ShareCallRow[] {
+  return calls
+    .flatMap((call) => {
+      const returnPct = call[`return_${days}d`]
+      return returnPct === null ? [] : [{ call, returnPct }]
     })
-
-  return [...rowsFromCalls, ...unpricedRows]
-    .sort((a, b) => b.total - a.total || a.asset.localeCompare(b.asset))
-}
-
-export function buildPriceLegs(calls: Scorecard['calls']): PriceLeg[] {
-  return calls.map((call, index) => {
-    const next = calls[index + 1]
-    const endPrice = next?.entry_price ?? call.current_price
-    const returnPct = call.direction === 'BULL'
-      ? (endPrice - call.entry_price) / call.entry_price
-      : (call.entry_price - endPrice) / call.entry_price
-    return {
-      id: `${call.asset}:${call.direction}:${call.first_pitch_at}`,
-      direction: call.direction,
-      startAt: call.first_pitch_at,
-      endAt: next?.first_pitch_at ?? null,
-      startPrice: call.entry_price,
-      endPrice,
-      returnPct,
-      isCurrent: !next,
-    }
-  })
-}
-
-export function topShareRows(assetRows: AssetRow[], limit = 3): ShareCallRow[] {
-  return assetRows
-    .slice()
-    .filter((row) => row.legs.length > 0)
-    .sort((a, b) => rowMove(b) - rowMove(a) || b.total - a.total)
+    .sort((a, b) => b.returnPct - a.returnPct)
     .slice(0, limit)
-    .map((row) => ({
-      asset: row.asset,
-      action: rowAction(row),
-      direction: rowDirection(row),
-      returnPct: rowMove(row),
-      mentions: row.total,
-      firstPitchAt: row.firstPitchAt,
+    .map(({ call, returnPct }) => ({
+      asset: normalizeTicker(call.asset),
+      action: call.direction === 'BEAR' ? 'SELL' : 'BUY',
+      direction: call.direction,
+      returnPct,
+      firstPitchAt: call.first_pitch_at,
     }))
 }
 
-export function rowMove(row: AssetRow) {
-  if (!row.legs.length) return 0
-  const currentLeg = currentRowLeg(row)
-  return currentLeg?.returnPct ?? 0
-}
-
-export function rowAction(row: AssetRow): 'BUY' | 'SELL' {
-  return rowDirection(row) === 'BEAR' ? 'SELL' : 'BUY'
-}
-
-export function rowDirection(row: AssetRow): 'BULL' | 'BEAR' {
-  const currentLeg = currentRowLeg(row)
-  if (currentLeg) return currentLeg.direction
-  return row.stanceLabel.includes('BEAR') && !row.stanceLabel.includes('BULL') ? 'BEAR' : 'BULL'
-}
-
-export function currentRowLeg(row: AssetRow) {
-  return row.legs.find((leg) => leg.isCurrent) ?? row.legs[row.legs.length - 1] ?? null
-}
-
-export function rowImpact(row: AssetRow) {
-  return Math.abs(rowMove(row)) * Math.log(row.total + 1)
+export function parseHorizon(value: string | undefined): Horizon {
+  return value === '7' || value === '7d' ? 7 : value === '90' || value === '90d' ? 90 : 30
 }
 
 export function formatDate(value: string) {
@@ -198,6 +151,72 @@ export function formatDate(value: string) {
   return date.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
+// Two decimals for ordinary prices, none for five-figure ones, and four significant digits below a dollar so a
+// memecoin is not "$0.00".
+export function formatPrice(value: number) {
+  if (value >= 10000) return `$${Math.round(value).toLocaleString('en')}`
+  if (value >= 1) return `$${value.toLocaleString('en', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`
+  return `$${value.toLocaleString('en', { maximumSignificantDigits: 4 })}`
+}
+
 export function normalizeTicker(value: string) {
   return `$${String(value ?? '').replace(/^\$+/, '').trim().toUpperCase()}`
+}
+
+export function callRecord(returns: (number | null)[]): CallRecord {
+  const settled = returns.filter((value): value is number => value !== null)
+  const wins = settled.filter((value) => value > 0).length
+  return {
+    wins,
+    losses: settled.length - wins,
+    avg: settled.length ? settled.reduce((sum, value) => sum + value, 0) / settled.length : null,
+  }
+}
+
+export type Sentiment = { label: string; tone: 'bull' | 'bear' | 'neutral' }
+
+// How one-sided an account's posts on an asset are. "Extremely" needs both a lopsided split and enough posts to mean it.
+export function sentiment(bulls: number, bears: number): Sentiment {
+  const total = bulls + bears
+  const lean = total ? (bulls - bears) / total : 0
+  if (Math.abs(lean) <= 0.2) return { label: 'Neutral', tone: 'neutral' }
+  const extreme = Math.abs(lean) >= 0.6 && total >= 5
+  return lean > 0
+    ? { label: extreme ? 'Extremely bullish' : 'Bullish', tone: 'bull' }
+    : { label: extreme ? 'Extremely bearish' : 'Bearish', tone: 'bear' }
+}
+
+// What $1,000 put into a call became.
+export function money(returnPct: number) {
+  return `$${Math.round(1000 * (1 + returnPct)).toLocaleString('en')}`
+}
+
+export type ResultPoint = { time: string; value: number; calls: number }
+
+// The running result of putting $1,000 into every call. Calls are taken in the order they were posted; each point is
+// the average of every call up to and including that day, as dollars. A call only counts once it is old enough to
+// have been sold at this horizon, so the line stops that many days before today.
+export function resultCurve(calls: Scorecard['calls'], days: Horizon): ResultPoint[] {
+  const settled = calls
+    .flatMap((call) => {
+      const returnPct = call[`return_${days}d`]
+      return returnPct === null ? [] : [{ day: new Date(call.first_pitch_at).toISOString().slice(0, 10), returnPct }]
+    })
+    .sort((a, b) => a.day.localeCompare(b.day))
+  const points = new Map<string, ResultPoint>()
+  let sum = 0
+  settled.forEach((call, index) => {
+    sum += call.returnPct
+    points.set(call.day, { time: call.day, value: 1000 * (1 + sum / (index + 1)), calls: index + 1 })
+  })
+  return [...points.values()]
+}
+
+// Whether each of the latest settled calls went their way, oldest first.
+export function recentResults(calls: Scorecard['calls'], days: Horizon, limit = 10): boolean[] {
+  return calls
+    .filter((call) => call[`return_${days}d`] !== null)
+    .sort((a, b) => a.first_pitch_at.localeCompare(b.first_pitch_at))
+    .slice(-limit)
+    .map((call) => (call[`return_${days}d`] ?? 0) > 0)
 }

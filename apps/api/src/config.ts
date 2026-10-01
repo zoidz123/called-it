@@ -7,7 +7,7 @@ export const TWITTER_KEY_NAMES = [
 
 export function scanIsConfigured(env: Readonly<Record<string, string | undefined>> = process.env) {
   return env.SCAN_WORKER_ENABLED !== 'false'
-    && Boolean(env.OPENAI_API_KEY?.trim())
+    && Boolean(env.TYPESAFE_API_KEY?.trim())
     && TWITTER_KEY_NAMES.some((name) => Boolean(env[name]?.trim()))
 }
 

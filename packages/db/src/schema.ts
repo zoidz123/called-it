@@ -68,11 +68,31 @@ export const calls = pgTable('calls', {
   entryPrice: doublePrecision('entry_price').notNull(),
   currentPrice: doublePrecision('current_price').notNull(),
   returnPct: doublePrecision('return_pct').notNull(),
+  return7d: doublePrecision('return_7d'),
+  return30d: doublePrecision('return_30d'),
+  return90d: doublePrecision('return_90d'),
   isUp: boolean('is_up').notNull(),
   mentions: integer('mentions').notNull(),
   bulls: integer('bulls').notNull(),
   bears: integer('bears').notNull(),
   pricedAt: timestamp('priced_at', { withTimezone: true }).notNull(),
+})
+
+export const callouts = pgTable('callouts', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  handle: text('handle').notNull(),
+  asset: text('asset').notNull(),
+  direction: text('direction').notNull(),
+  tweetId: text('tweet_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  episodeStart: timestamp('episode_start', { withTimezone: true }).notNull(),
+  conviction: doublePrecision('conviction').notNull().default(0),
+  entryPrice: doublePrecision('entry_price').notNull(),
+  entryAt: timestamp('entry_at', { withTimezone: true }),
+  returnPct: doublePrecision('return_pct').notNull(),
+  return7d: doublePrecision('return_7d'),
+  return30d: doublePrecision('return_30d'),
+  return90d: doublePrecision('return_90d'),
 })
 
 export const userStats = pgTable('user_stats', {
@@ -82,6 +102,18 @@ export const userStats = pgTable('user_stats', {
   hitRate: doublePrecision('hit_rate').notNull().default(0),
   callsTotal: integer('calls_total').notNull().default(0),
   callsUp: integer('calls_up').notNull().default(0),
+  avgReturn7d: doublePrecision('avg_return_7d').notNull().default(0),
+  hitRate7d: doublePrecision('hit_rate_7d').notNull().default(0),
+  calls7d: integer('calls_7d').notNull().default(0),
+  avgReturn30d: doublePrecision('avg_return_30d').notNull().default(0),
+  hitRate30d: doublePrecision('hit_rate_30d').notNull().default(0),
+  calls30d: integer('calls_30d').notNull().default(0),
+  avgReturn90d: doublePrecision('avg_return_90d').notNull().default(0),
+  hitRate90d: doublePrecision('hit_rate_90d').notNull().default(0),
+  calls90d: integer('calls_90d').notNull().default(0),
+  medianReturn7d: doublePrecision('median_return_7d').notNull().default(0),
+  medianReturn30d: doublePrecision('median_return_30d').notNull().default(0),
+  medianReturn90d: doublePrecision('median_return_90d').notNull().default(0),
   computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

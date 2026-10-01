@@ -5,12 +5,13 @@ import { migrate } from '@called-it/db/migrate'
 import {
   createAssetFeedback,
   createOrReuseScanJob,
+  getAssetThread,
   getLeaderboard,
   getScanJob,
   getUserScorecard,
   maybeEnqueueStaleRefreshes,
 } from '@called-it/db'
-import { getXUser, loadLocalEnv, parseXHandle } from '@called-it/core'
+import { dayKey, getDailyBars, getXUser, loadLocalEnv, parseXHandle, type Bar } from '@called-it/core'
 import { startWorkerLoop } from './worker'
 import { corsOrigin, scanIsConfigured } from './config'
 
@@ -20,6 +21,8 @@ const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001)
 const FEEDBACK_MAX_PER_HOUR = clampNumber(process.env.FEEDBACK_MAX_PER_HOUR, 20, 1, 100)
 const FEEDBACK_RATE_WINDOW_MS = 60 * 60 * 1000
 const FEEDBACK_DUPLICATE_WINDOW_MS = 10 * 60 * 1000
+const PRICE_CACHE_TTL_MS = 10 * 60 * 1000
+const priceCache = new Map<string, { expiresAt: number; bars: Promise<Bar[]> }>()
 const feedbackBuckets = new Map<string, { count: number; resetAt: number; fingerprints: Map<string, number> }>()
 
 export async function buildServer() {
@@ -34,7 +37,7 @@ export async function buildServer() {
     const offset = clampNumber(request.query?.offset, 0, 0, 10_000)
     return {
       leaderboard: await getLeaderboard({
-        sort: request.query?.sort === 'hitrate' ? 'hitrate' : 'return',
+        horizon: request.query?.sort === '7d' ? 7 : request.query?.sort === '90d' ? 90 : 30,
         limit,
         offset,
       }),
@@ -50,6 +53,14 @@ export async function buildServer() {
     if (!scorecard) return reply.code(404).send({ error: 'Scorecard not found' })
     const refresh = await maybeEnqueueStaleRefreshes(scorecard.user.handle)
     return { ...scorecard, refresh }
+  })
+
+  app.get('/api/users/:handle/assets/:asset', async (request: any, reply) => {
+    const asset = normalizeAsset(request.params.asset)
+    if (!asset) return reply.code(400).send({ error: 'Asset is required.' })
+    const thread = await getAssetThread(parseXHandle(request.params.handle), asset)
+    if (!thread.source || !thread.callouts.length) return reply.code(404).send({ error: 'Asset row not found.' })
+    return { asset, callouts: thread.callouts, prices: await assetPrices(thread.source, thread.callouts[0].created_at) }
   })
 
   app.post('/api/users/:handle/asset-feedback', async (request: any, reply) => {
@@ -215,6 +226,22 @@ function pruneFeedbackBuckets(now: number) {
   for (const [key, bucket] of feedbackBuckets) {
     if (bucket.resetAt <= now) feedbackBuckets.delete(key)
   }
+}
+
+// Daily closes for a thread's chart, shared briefly across viewers so a popular profile is not one upstream fetch per open row.
+function assetPrices(source: { asset_class: 'crypto' | 'stock'; source_id: string }, from: string) {
+  const key = `${source.asset_class}:${source.source_id}:${dayKey(from)}`
+  const cached = priceCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.bars
+  const bars = getDailyBars({
+    symbol: source.source_id,
+    assetClass: source.asset_class,
+    sourceId: source.source_id,
+    name: null,
+    provider: source.asset_class === 'crypto' ? 'hyperliquid' : 'yahoo',
+  }, from).catch(() => [])
+  priceCache.set(key, { expiresAt: Date.now() + PRICE_CACHE_TTL_MS, bars })
+  return bars
 }
 
 function sanitizeRowContext(value: unknown) {

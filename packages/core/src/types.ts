@@ -57,6 +57,25 @@ export type PricePoint = {
   pricedAt: string
 }
 
+export const HORIZON_DAYS = [7, 30, 90] as const
+export type HorizonDays = (typeof HORIZON_DAYS)[number]
+export type HorizonPrices = Record<HorizonDays, PricePoint | null>
+
+// One post that makes a call, with the move after it.
+export type ScoredCallout = {
+  tweetId: string
+  createdAt: string
+  conviction: number
+  // The first price after the post, and when it traded.
+  entryPrice: number
+  entryAt: string
+  returnPct: number
+  return7d: number | null
+  return30d: number | null
+  return90d: number | null
+}
+
+// One call: one post's stance on one asset. `callouts` holds that single post's pricing.
 export type ScoredCall = {
   handle: string
   asset: string
@@ -68,12 +87,17 @@ export type ScoredCall = {
   entryPrice: number
   currentPrice: number
   returnPct: number
+  // Directional return N days after the post; null until that horizon has a settled price.
+  return7d: number | null
+  return30d: number | null
+  return90d: number | null
   isUp: boolean
   mentions: number
   bulls: number
   bears: number
   pricedAt: string
   evidence: ClassifiedTweet[]
+  callouts: ScoredCallout[]
 }
 
 export type UserStats = {
@@ -83,4 +107,13 @@ export type UserStats = {
   hitRate: number
   callsTotal: number
   callsUp: number
+  horizons: Record<HorizonDays, HorizonStats>
+}
+
+// Stats over the calls whose horizon has settled; calls counts those calls.
+export type HorizonStats = {
+  avgReturn: number
+  medianReturn: number
+  hitRate: number
+  calls: number
 }

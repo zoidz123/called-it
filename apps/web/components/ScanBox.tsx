@@ -106,15 +106,17 @@ export function ScanBox({
         />
         <button type="submit" disabled={busy || !canScan}>{!API_URL ? 'Unavailable' : busy ? 'Scanning' : 'Scan'}</button>
       </form>
-      <div className="scan-helper-row">
-        <p>{helperText}</p>
-        <span className="scan-info">
-          <button type="button" aria-label="How scans work">?</button>
-          <span className="scan-info-popover" role="tooltip">
-            We pull public X/Twitter posts from the past year, filter for stock and crypto ticker mentions, then price what happened after each call.
+      {helperText ? (
+        <div className="scan-helper-row">
+          <p>{helperText}</p>
+          <span className="scan-info">
+            <button type="button" aria-label="How scans work">?</button>
+            <span className="scan-info-popover" role="tooltip">
+              We pull public X/Twitter posts from the past year, filter for stock and crypto ticker mentions, then price what happened after each call.
+            </span>
           </span>
-        </span>
-      </div>
+        </div>
+      ) : null}
       {!API_URL ? <p className="status-line">Live scanning is unavailable in this preview.</p> : null}
       {inlineError ? <p className="status-line scan-error">{inlineError}</p> : null}
       {busy && !modalOpen ? (

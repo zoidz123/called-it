@@ -1,72 +1,70 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { optionalEnv, requiredEnv } from '../env'
+import { optionalEnv } from '../env'
+import { askJev, type JevQuestion } from '../typesafe'
 import type { ClassifiedTweet, RawStance, TweetCandidate } from '../types'
-
-export const STANCE_SYSTEM_PROMPT = `You classify financial tweets to find a person's HIGH-CONVICTION TRADE CALLS.
-
-For each tweet, for EACH ticker ($CASHTAG) provided, output the AUTHOR'S OWN current directional stance on THAT ticker:
-- "bull" = the author clearly expresses a current/future bullish investment view on this exact ticker: expects price/appreciation/upside, says to buy/own/long, says it is a core long, says dips should be bought, discloses ownership with positive thesis, or strongly defends a thesis with forward conviction.
-- "bear" = the author clearly expresses a current/future bearish investment view on this exact ticker: expects downside, says to sell/avoid/short, says it is overvalued/doomed, discloses a short, or strongly warns against owning it.
-- "none" = anything less than a clear high-conviction directional call.
-
-Be extremely conservative. Default to "none" when unsure.
-
-STRICT EXCLUSIONS:
-- Performance recaps, scorecards, lists, rankings, or "these were up/down X%" are "none" for every ticker unless the author gives a specific current/future directional call for that exact ticker.
-- A broad basket statement like "many of these should keep going up" is not enough to mark every listed ticker bullish.
-- Product/company comparisons are "none" unless explicitly framed as an investment/stock-price call. Example: "IBKR is the better brokerage than HOOD" is not bullish IBKR or bearish HOOD by itself.
-- Questions, surprise, criticism of a product feature, or customer/user advice are "none" unless the author explicitly ties it to buying/selling/shorting the stock/token.
-- Retrospective victory laps ("I called it", "now up", "was right", "went from X to Y") are "none" unless paired with a fresh current/future call.
-- Neutral news, funding/news announcements, earnings facts, partnerships, or "interesting" observations are "none" unless the author clearly states a directional view.
-- Comparisons/benchmarks: if a ticker is only used as an analogy or benchmark for another (e.g. "$A is the next $B"), the benchmark $B is "none".
-
-Words like "short", "sell", "crash", "bear", "dump", "long", "up", and "down" do NOT by themselves decide stance. Judge the author's own investment view on that exact ticker.
-
-conviction is 0..1. Use bull/bear only when conviction >= 0.7; otherwise use none.
-
-Reply ONLY with JSON: {"results":[{"id":"...","stances":[{"asset":"$X","stance":"bull|bear|none","conviction":0.0}]}]}`
 
 type BatchItem = { id: string; text: string; tickers: string[] }
 
-export async function classifyBatch(
-  items: BatchItem[],
-  { apiKey = requiredEnv('OPENAI_API_KEY'), model = optionalEnv('OPENAI_MODEL') ?? 'gpt-5.4' } = {},
-): Promise<Record<string, RawStance[]>> {
-  if (!items.length) return {}
+// Jev answers every question in isolation, so each ticker gets its own Choice question against one tweet.
+const JEV_STANCE_CRITERIA = {
+  bull: {
+    what: 'The author clearly states their own current or future bullish investment view on this exact ticker: expects the price to rise, says to buy, own or go long, calls it a core long, says dips should be bought, discloses ownership with a positive thesis, or strongly defends a thesis with forward conviction.',
+    not_for: 'Words like "long" or "up" on their own, or a positive remark about the product or company that is not framed as an investment call.',
+  },
+  bear: {
+    what: 'The author clearly states their own current or future bearish investment view on this exact ticker: expects the price to fall, says to sell, avoid or short it, calls it overvalued or doomed, discloses a short, or strongly warns against owning it.',
+    not_for: 'Words like "short", "sell", "crash" or "dump" on their own, or criticism of a product feature that is not tied to the stock or token price.',
+  },
+  none: {
+    what: 'Anything less than a clear, high-conviction directional call by the author on this exact ticker. Choose this when unsure.',
+    examples: [
+      'Performance recaps, scorecards, lists or rankings with no fresh call on this ticker.',
+      'A broad basket statement that does not single out this ticker.',
+      'Retrospective victory laps such as "I called it" or "now up 40%" with no new call.',
+      'Neutral news, earnings facts, funding or partnership announcements.',
+      'Questions, surprise, sarcasm, jokes or quoting someone else\'s view.',
+      'The ticker is only a benchmark or analogy for another asset.',
+    ],
+  },
+}
+const JEV_CONCURRENCY = 8
+const JEV_SARCASM_MAX = 0.5
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: STANCE_SYSTEM_PROMPT },
-        { role: 'user', content: JSON.stringify(items) },
-      ],
-    }),
+export async function classifyWithJev(item: BatchItem): Promise<RawStance[]> {
+  if (!item.tickers.length) return []
+  const answers = await askJev({ tweet: item.text }, Object.fromEntries(item.tickers.flatMap((ticker): [string, JevQuestion][] => [
+    [ticker, {
+      type: 'choice',
+      instructions: {
+        question: "What is the author's own directional investment stance on the asset named in `ticker`, as expressed in `tweet`?",
+        ticker,
+      },
+      criteria: JEV_STANCE_CRITERIA,
+    }],
+    [sarcasmId(ticker), {
+      type: 'noul',
+      instructions: {
+        question: 'Is the author being sarcastic or mocking people who hold the opposite view on the asset in `ticker`, so that the literal wording is the reverse of what the author believes?',
+        ticker,
+      },
+    }],
+  ])))
+  return item.tickers.map((ticker) => {
+    const answer = answers[ticker]
+    // A sarcastic post reads as the opposite call, so it is dropped rather than scored.
+    const sarcastic = (answers[sarcasmId(ticker)]?.noul ?? 0) > JEV_SARCASM_MAX
+    const stance = !sarcastic && (answer?.choice === 'bull' || answer?.choice === 'bear') ? answer.choice : 'none'
+    // The chosen option's probability plays the role of conviction, so the 0.7 floor still applies.
+    return { asset: normalizeAsset(ticker), stance, conviction: Number(answer?.probabilities?.[stance]) || 0 }
   })
-
-  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 240)}`)
-  const data = await res.json()
-  const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? '{}')
-  const out: Record<string, RawStance[]> = {}
-  for (const result of parsed.results ?? []) {
-    out[String(result.id)] = (result.stances ?? []).map((stance: any) => ({
-      asset: normalizeAsset(stance.asset),
-      stance: ['bull', 'bear', 'none'].includes(stance.stance) ? stance.stance : 'none',
-      conviction: Number(stance.conviction) || 0,
-    }))
-  }
-  return out
 }
 
-export async function classifyCandidates(
-  candidates: TweetCandidate[],
-  { batchSize = 12, concurrency = 4 } = {},
-) {
+function sarcasmId(ticker: string) {
+  return `${ticker}:sarcasm`
+}
+
+export async function classifyCandidates(candidates: TweetCandidate[]) {
   const maxCandidates = Number(optionalEnv('CLASSIFY_MAX_CANDIDATES') ?? 0)
   const selected = maxCandidates > 0 ? candidates.slice(0, maxCandidates) : candidates
   const cached = optionalEnv('USE_LOCAL_TWITTER_CACHE') === '1' ? loadLocalClassificationCache() : new Map<string, RawStance[]>()
@@ -76,10 +74,8 @@ export async function classifyCandidates(
     if (stances) classified.set(candidate.id, stances)
   }
   const todo = selected.filter((candidate) => !classified.has(candidate.id))
-  const batches = chunk(todo, batchSize)
-  await mapWithConcurrency(batches, concurrency, async (batch) => {
-    const result = await classifyBatch(batch.map((item) => ({ id: item.id, text: item.text, tickers: item.assets })))
-    for (const [id, stances] of Object.entries(result)) classified.set(id, stances)
+  await mapWithConcurrency(todo, JEV_CONCURRENCY, async (item) => {
+    classified.set(item.id, await classifyWithJev({ id: item.id, text: item.text, tickers: item.assets }))
   })
   return selected.map((candidate) => ({
     ...candidate,
@@ -157,12 +153,6 @@ function ignoredCashtagsForHandle(handle: string): Set<string> {
       if (normalizedAsset !== '$UNKNOWN') out.add(normalizedAsset)
     }
   }
-  return out
-}
-
-export function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
   return out
 }
 

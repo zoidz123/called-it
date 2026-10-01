@@ -1,4 +1,5 @@
-import { optionalEnv, requiredEnv } from '../env'
+import { optionalEnv } from '../env'
+import { askJev } from '../typesafe'
 import type { AssetClass, ResolvedAsset } from '../types'
 
 type Provider = 'yahoo' | 'hyperliquid'
@@ -229,61 +230,40 @@ async function resolveWithLlm(items: { raw: string; candidates: AssetCandidate[]
   const out = new Map<string, AssetCandidate>()
   if (!items.length || optionalEnv('ASSET_RESOLUTION_LLM_ENABLED') === '0') return out
 
-  try {
-    const apiKey = requiredEnv('OPENAI_API_KEY')
-    const model = optionalEnv('OPENAI_MODEL') ?? 'gpt-5.4'
-    const payload = items.map((item) => ({
-      cashtag: `$${item.raw}`,
-      tweets: item.context?.tweets.slice(0, 3) ?? [],
-      candidates: item.candidates.slice(0, 6).map((candidate, index) => ({
-        id: String(index),
-        provider: candidate.provider,
-        symbol: candidate.symbol,
-        assetClass: candidate.assetClass,
-        name: candidate.name,
-        exchange: candidate.exchange,
-        quoteType: candidate.quoteType,
-      })),
-    }))
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: ASSET_RESOLUTION_PROMPT },
-          { role: 'user', content: JSON.stringify({ items: payload }) },
-        ],
-      }),
-    })
-    if (!response.ok) throw new Error(`OpenAI ${response.status}: ${(await response.text()).slice(0, 240)}`)
-    const parsed = JSON.parse((await response.json()).choices?.[0]?.message?.content ?? '{}')
-    for (const result of parsed.results ?? []) {
-      const raw = cleanSymbol(result.cashtag)
-      const source = items.find((item) => item.raw === raw)
-      const index = Number(result.selectedCandidateId)
-      const confidence = Number(result.confidence) || 0
-      if (!source || !Number.isInteger(index) || confidence < 0.65) continue
-      const candidate = source.candidates[index]
-      if (candidate) out.set(raw, { ...candidate, score: Math.max(candidate.score, confidence * 1_000_000) })
+  await Promise.all(items.map(async (item) => {
+    try {
+      const candidates = item.candidates.slice(0, 6)
+      const answers = await askJev(
+        { cashtag: `$${item.raw}`, tweets: item.context?.tweets.slice(0, 3).map((tweet) => tweet.text) ?? [] },
+        {
+          instrument: {
+            type: 'choice',
+            instructions: 'Which priced instrument does `cashtag` refer to in `tweets`? Match the company or project, sector, market and asset type the tweets describe.',
+            criteria: {
+              ...Object.fromEntries(candidates.map((candidate, index) => [String(index), {
+                provider: candidate.provider,
+                symbol: candidate.symbol,
+                assetClass: candidate.assetClass,
+                name: candidate.name,
+                exchange: candidate.exchange,
+                quoteType: candidate.quoteType,
+              }])),
+              ambiguous: 'The tweets do not clearly identify any one of the listed instruments.',
+            },
+          },
+        },
+      )
+      const answer = answers.instrument
+      const candidate = candidates[Number(answer?.choice)]
+      const confidence = Number(answer?.probabilities?.[answer?.choice ?? '']) || 0
+      if (!candidate || confidence < 0.65) return
+      out.set(item.raw, { ...candidate, score: Math.max(candidate.score, confidence * 1_000_000) })
+    } catch (error) {
+      if (optionalEnv('DEBUG_PRICING') === '1') console.warn('asset LLM resolution failed', error)
     }
-  } catch (error) {
-    if (optionalEnv('DEBUG_PRICING') === '1') console.warn('asset LLM resolution failed', error)
-  }
+  }))
   return out
 }
-
-const ASSET_RESOLUTION_PROMPT = `You resolve financial cashtags to priced instruments.
-
-You are given one cashtag, tweet context, and candidate instruments from Yahoo Finance and Hyperliquid.
-Pick ONLY one candidate id from the provided candidates when the tweet context clearly identifies it.
-Prefer the candidate whose company/project matches the tweet context, sector, market, and asset type.
-Do not invent symbols. If context is insufficient or candidates are not a clear match, mark ambiguous.
-
-Reply ONLY with JSON:
-{"results":[{"cashtag":"$TOWA","selectedCandidateId":"0|null","confidence":0.0,"ambiguous":true,"reason":"short reason"}]}`
 
 function toResolvedAsset(raw: string, candidate: AssetCandidate, resolvedBy: ResolvedBy): ResolvedAsset {
   return {

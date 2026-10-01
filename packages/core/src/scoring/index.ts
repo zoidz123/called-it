@@ -1,61 +1,45 @@
 import { resolveAssets, type AssetContext } from '../assets'
-import { getEntryAndCurrentPrices } from '../pricing'
-import type { ClassifiedTweet, Direction, ResolvedAsset, ScoredCall, UserStats } from '../types'
+import { getPriceSeries, pricesAt, type PriceSeries } from '../pricing'
+import type { ClassifiedTweet, Direction, HorizonStats, ResolvedAsset, ScoredCall, ScoredCallout, UserStats } from '../types'
 
 export async function scoreCalls(
   handle: string,
   classifiedTweets: ClassifiedTweet[],
-  options: { allowLlmAssetResolution?: boolean } = {},
+  // `resolved` holds instruments already settled for this handle, so they are not looked up again.
+  // Assets outside it are skipped unless `resolveMissing` is set.
+  // `settled` holds callouts whose three horizons are already final. They are reused as stored, never repriced,
+  // so a result cannot drift once the venue stops serving the hourly prices it was scored on.
+  options: {
+    allowLlmAssetResolution?: boolean
+    resolved?: Map<string, ResolvedAsset>
+    resolveMissing?: boolean
+    settled?: Map<string, SettledCallout>
+  } = {},
 ): Promise<{ calls: ScoredCall[]; stats: UserStats }> {
   const maxAssets = Number(process.env.SCORING_MAX_ASSETS ?? 0)
   const assetsAll = [...new Set(classifiedTweets.flatMap((tweet) => tweet.stances.map((stance) => stance.asset)))]
   const assets = maxAssets > 0 ? assetsAll.slice(0, maxAssets) : assetsAll
-  const resolved = await resolveAssets(assets, buildAssetContexts(classifiedTweets, assets), { allowLlm: options.allowLlmAssetResolution })
+  const resolved = new Map(options.resolved)
+  if (!options.resolved || options.resolveMissing) {
+    const missing = assets.filter((asset) => !resolved.has(asset))
+    const found = await resolveAssets(missing, buildAssetContexts(classifiedTweets, missing), { allowLlm: options.allowLlmAssetResolution })
+    for (const [asset, instrument] of found) resolved.set(asset, instrument)
+  }
   const callGroups = await mapWithConcurrency(assets, Number(process.env.PRICING_CONCURRENCY ?? 6), async (asset) => {
-    return scoreAssetCalls(handle, asset, classifiedTweets, resolved)
+    return scoreAssetCalls(handle, asset, classifiedTweets, resolved, options.settled)
   })
-  const calls = callGroups.flat().filter(Boolean) as ScoredCall[]
+  const calls = callGroups.flat()
 
   calls.sort((a, b) => b.returnPct - a.returnPct)
   return { calls, stats: computeStats(handle, calls) }
-}
-
-export async function refreshExistingCallPrices(
-  existingCalls: Array<Omit<ScoredCall, 'evidence'> & { id?: string }>,
-): Promise<ScoredCall[]> {
-  const refreshed = await mapWithConcurrency(existingCalls, Number(process.env.PRICING_CONCURRENCY ?? 6), async (call) => {
-    const resolvedAsset: ResolvedAsset = {
-      symbol: call.asset,
-      assetClass: call.assetClass,
-      sourceId: call.sourceId,
-      name: null,
-      provider: call.assetClass === 'crypto' ? 'hyperliquid' : 'yahoo',
-    }
-    const prices = await getEntryAndCurrentPrices(resolvedAsset, call.firstPitchAt)
-    if (!prices) return null
-
-    const returnPct = call.direction === 'BULL'
-      ? (prices.current.price - prices.entry.price) / prices.entry.price
-      : (prices.entry.price - prices.current.price) / prices.entry.price
-
-    return {
-      ...call,
-      entryPrice: prices.entry.price,
-      currentPrice: prices.current.price,
-      returnPct,
-      isUp: returnPct > 0,
-      pricedAt: prices.current.pricedAt,
-      evidence: [],
-    }
-  })
-  return refreshed.filter(Boolean) as ScoredCall[]
 }
 
 async function scoreAssetCalls(
   handle: string,
   asset: string,
   classifiedTweets: ClassifiedTweet[],
-  resolved: Awaited<ReturnType<typeof resolveAssets>>,
+  resolved: Map<string, ResolvedAsset>,
+  settled?: Map<string, SettledCallout>,
 ): Promise<ScoredCall[]> {
   const assetTweets = classifiedTweets
     .filter((tweet) => tweet.stances.some((stance) => stance.asset === asset))
@@ -63,84 +47,119 @@ async function scoreAssetCalls(
   const resolvedAsset = resolved.get(asset)
   if (!assetTweets.length || !resolvedAsset) return []
 
-  const stances = assetTweets.flatMap((tweet) => tweet.stances.filter((stance) => stance.asset === asset))
-  const calls = await Promise.all((['BULL', 'BEAR'] as const).map(async (direction) => {
-    return scoreDirectionalAssetCall({
-      handle,
-      asset,
-      direction,
-      assetTweets,
-      stances,
-      resolvedAsset,
-    })
-  }))
-
-  return calls.filter(Boolean) as ScoredCall[]
+  const series = await getPriceSeries(resolvedAsset, assetTweets[0].createdAt)
+  if (!series) return []
+  return callsFromSeries(handle, asset, resolvedAsset, assetTweets, series, Date.now(), settled)
 }
 
-async function scoreDirectionalAssetCall({
-  handle,
-  asset,
-  direction,
-  assetTweets,
-  stances,
-  resolvedAsset,
-}: {
-  handle: string
-  asset: string
-  direction: Direction
-  assetTweets: ClassifiedTweet[]
-  stances: { asset: string; direction: Direction; conviction: number }[]
-  resolvedAsset: ResolvedAsset
-}): Promise<ScoredCall | null> {
-  const directionTweets = assetTweets.filter((tweet) =>
-    tweet.stances.some((stance) => stance.asset === asset && stance.direction === direction),
-  )
-  const first = directionTweets[0]
-  if (!first) return null
-
-  const prices = await getEntryAndCurrentPrices(resolvedAsset, first.createdAt)
-  if (!prices) return null
-
-  const returnPct = direction === 'BULL'
-    ? (prices.current.price - prices.entry.price) / prices.entry.price
-    : (prices.entry.price - prices.current.price) / prices.entry.price
-  return {
-    handle,
-    asset,
-    assetClass: resolvedAsset.assetClass,
-    sourceId: resolvedAsset.sourceId,
-    direction,
-    firstPitchAt: first.createdAt,
-    firstTweetId: first.id,
-    entryPrice: prices.entry.price,
-    currentPrice: prices.current.price,
-    returnPct,
-    isUp: returnPct > 0,
-    mentions: assetTweets.length,
-    bulls: stances.filter((stance) => stance.direction === 'BULL').length,
-    bears: stances.filter((stance) => stance.direction === 'BEAR').length,
-    pricedAt: prices.current.pricedAt,
-    evidence: directionTweets.slice(0, 2),
+// Prices every post on one asset. Each post that makes a call is its own call, as if $1,000 went into it.
+export function callsFromSeries(
+  handle: string,
+  asset: string,
+  resolvedAsset: ResolvedAsset,
+  assetTweets: ClassifiedTweet[],
+  series: PriceSeries,
+  now = Date.now(),
+  settled?: Map<string, SettledCallout>,
+): ScoredCall[] {
+  const stances = assetTweets.flatMap((tweet) => tweet.stances.filter((stance) => stance.asset === asset))
+  const calls: ScoredCall[] = []
+  for (const tweet of assetTweets) {
+    for (const stance of tweet.stances) {
+      if (stance.asset !== asset) continue
+      const { direction } = stance
+      const final = settled?.get(settledKey(tweet.id, asset, direction))
+      const prices = final ? null : pricesAt(series, tweet.createdAt, now)
+      if (!final && !prices) continue
+      const entryPrice = final?.entryPrice ?? prices?.entry.price ?? 0
+      const at = (exit: number | undefined) => exit === undefined ? null : directionalReturn(direction, entryPrice, exit)
+      const callout: ScoredCallout = {
+        tweetId: tweet.id,
+        createdAt: new Date(tweet.createdAt).toISOString(),
+        conviction: stance.conviction,
+        entryPrice,
+        entryAt: final?.entryAt ?? prices?.entry.pricedAt ?? new Date(tweet.createdAt).toISOString(),
+        returnPct: directionalReturn(direction, entryPrice, series.current.price),
+        return7d: final ? final.return7d : at(prices?.horizons[7]?.price),
+        return30d: final ? final.return30d : at(prices?.horizons[30]?.price),
+        return90d: final ? final.return90d : at(prices?.horizons[90]?.price),
+      }
+      calls.push({
+        handle,
+        asset,
+        assetClass: resolvedAsset.assetClass,
+        sourceId: resolvedAsset.sourceId,
+        direction,
+        firstPitchAt: callout.createdAt,
+        firstTweetId: callout.tweetId,
+        entryPrice,
+        currentPrice: series.current.price,
+        returnPct: callout.returnPct,
+        return7d: callout.return7d,
+        return30d: callout.return30d,
+        return90d: callout.return90d,
+        isUp: callout.returnPct > 0,
+        mentions: 1,
+        bulls: stances.filter((item) => item.direction === 'BULL').length,
+        bears: stances.filter((item) => item.direction === 'BEAR').length,
+        pricedAt: series.current.pricedAt,
+        evidence: [tweet],
+        callouts: [callout],
+      })
+    }
   }
+  return calls
+}
+
+export type SettledCallout = { entryPrice: number; entryAt: string; return7d: number; return30d: number; return90d: number }
+
+export function settledKey(tweetId: string, asset: string, direction: Direction) {
+  return `${tweetId}|${asset}|${direction}`
 }
 
 export function computeStats(handle: string, calls: ScoredCall[]): UserStats {
   const returns = calls.map((call) => call.returnPct)
-  const avgReturn = returns.length ? returns.reduce((sum, value) => sum + value, 0) / returns.length : 0
-  const sorted = [...returns].sort((a, b) => a - b)
-  const medianReturn = sorted.length
-    ? sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
-    : 0
   const callsUp = calls.filter((call) => call.isUp).length
   return {
     handle,
-    avgReturn,
-    medianReturn,
+    avgReturn: mean(returns) ?? 0,
+    medianReturn: median(returns),
     hitRate: calls.length ? callsUp / calls.length : 0,
     callsTotal: calls.length,
     callsUp,
+    horizons: {
+      7: horizonStats(calls.map((call) => call.return7d)),
+      30: horizonStats(calls.map((call) => call.return30d)),
+      90: horizonStats(calls.map((call) => call.return90d)),
+    },
   }
+}
+
+function horizonStats(returns: (number | null)[]): HorizonStats {
+  const settled = returns.filter((value): value is number => value !== null)
+  if (!settled.length) return { avgReturn: 0, medianReturn: 0, hitRate: 0, calls: 0 }
+  return {
+    avgReturn: mean(settled) ?? 0,
+    medianReturn: median(settled),
+    hitRate: settled.filter((value) => value > 0).length / settled.length,
+    calls: settled.length,
+  }
+}
+
+// Averages the values that have settled; null when none have.
+function mean(values: (number | null)[]): number | null {
+  const settled = values.filter((value): value is number => value !== null)
+  return settled.length ? settled.reduce((sum, value) => sum + value, 0) / settled.length : null
+}
+
+function median(values: number[]): number {
+  if (!values.length) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+}
+
+function directionalReturn(direction: Direction, entry: number, exit: number) {
+  return direction === 'BULL' ? (exit - entry) / entry : (entry - exit) / entry
 }
 
 function buildAssetContexts(classifiedTweets: ClassifiedTweet[], assets: string[]) {

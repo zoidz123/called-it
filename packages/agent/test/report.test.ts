@@ -53,7 +53,10 @@ test('marks historical report evidence superseded or deleted without changing it
 function account(handle: string, hitRate: number, callsTotal: number): AccountAnalysis {
   return {
     handle,
-    stats: { handle, hitRate, callsTotal, callsUp: Math.round(hitRate * callsTotal), avgReturn: 0.2, medianReturn: 0.1 },
+    stats: {
+      handle, hitRate, callsTotal, callsUp: Math.round(hitRate * callsTotal), avgReturn: 0.2, medianReturn: 0.1,
+      horizons: { 7: emptyHorizon, 30: emptyHorizon, 90: emptyHorizon },
+    },
     calls: [],
     notableComments: [],
     callEvidence: [],
@@ -74,3 +77,5 @@ function coverage(handle: string, completeness: 'best_effort' | 'partial', stopR
     post_count: 20,
   }
 }
+
+const emptyHorizon = { avgReturn: 0, medianReturn: 0, hitRate: 0, calls: 0 }

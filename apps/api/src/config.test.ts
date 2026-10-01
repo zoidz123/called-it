@@ -12,13 +12,13 @@ describe('API configuration', () => {
   })
 
   test('enables scans only when both providers are configured', () => {
-    expect(scanIsConfigured({ OPENAI_API_KEY: 'configured', TWITTERAPI_IO_API_KEYS: 'configured' })).toBe(true)
-    expect(scanIsConfigured({ OPENAI_API_KEY: 'configured' })).toBe(false)
+    expect(scanIsConfigured({ TYPESAFE_API_KEY: 'configured', TWITTERAPI_IO_API_KEYS: 'configured' })).toBe(true)
+    expect(scanIsConfigured({ TYPESAFE_API_KEY: 'configured' })).toBe(false)
   })
 
   test('disables scan routes with the worker', () => {
     expect(scanIsConfigured({
-      OPENAI_API_KEY: 'configured',
+      TYPESAFE_API_KEY: 'configured',
       TWITTERAPI_IO_API_KEYS: 'configured',
       SCAN_WORKER_ENABLED: 'false',
     })).toBe(false)

@@ -6,23 +6,29 @@ import {
   filterIgnoredCashtags,
   getAuthorTimeline,
   getXUser,
-  refreshExistingCallPrices,
   requiredAnyEnv,
   requiredEnv,
   scoreCalls,
+  settledKey,
+  type ResolvedAsset,
+  type SettledCallout,
 } from '@called-it/core'
 import {
   claimNextScanJob,
   completeScanJob,
   failScanJob,
-  getCallsForPriceRefresh,
+  getLastScannedAt,
+  getSettledCallouts,
+  getStoredAssetSources,
+  getStoredClassifiedTweets,
   persistScorecard,
-  persistPriceRefresh,
+  persistRescore,
   updateScanJob,
 } from '@called-it/db'
 import { TWITTER_KEY_NAMES } from './config'
 
 const IDLE_DELAY_MS = 1500
+const DAY_MS = 24 * 60 * 60 * 1000
 const LOOKBACK_DAYS = Number(process.env.TWITTER_LOOKBACK_DAYS ?? 365)
 const LATENCY_STAGES = ['profile_fetch', 'tweet_fetch', 'prefilter', 'classification', 'pricing_scoring', 'persistence'] as const
 
@@ -30,7 +36,7 @@ type LatencyStage = (typeof LATENCY_STAGES)[number]
 type StageTiming = { stage: LatencyStage; durationMs: number; status: 'complete' | 'failed' }
 
 export function startWorkerLoop({ concurrency = Number(process.env.SCAN_WORKER_CONCURRENCY ?? 1), workerId = crypto.randomUUID() } = {}) {
-  requiredEnv('OPENAI_API_KEY')
+  requiredEnv('TYPESAFE_API_KEY')
   requiredAnyEnv(TWITTER_KEY_NAMES)
   const controllers = Array.from({ length: Math.max(1, concurrency) }, () => ({ stopped: false }))
   for (const controller of controllers) runLoop({ controller, workerId })
@@ -63,17 +69,17 @@ async function processPriceRefreshJob(job: any) {
   const latency = createScanLatencyLogger({ jobId: job.id, handle })
   try {
     await updateScanJob(job.id, { stage: 'pricing', progress: 20, progress_message: 'Refreshing prices' })
-    const storedCalls = await getCallsForPriceRefresh(handle)
-    const calls = await latency.measure('pricing_scoring', () => refreshExistingCallPrices(storedCalls.map(toScoredCall)))
+    const [tweets, resolved, settled] = await Promise.all([getStoredClassifiedTweets(handle), storedInstruments(handle), settledCallouts(handle)])
+    const { calls } = await latency.measure('pricing_scoring', () => scoreCalls(handle, tweets, { resolved, settled }))
 
     await updateScanJob(job.id, {
       stage: 'persisting',
       progress: 90,
-      calls_found: storedCalls.length,
+      calls_found: calls.length,
       priced_calls: calls.length,
       progress_message: 'Saving refreshed prices',
     })
-    await latency.measure('persistence', () => persistPriceRefresh(handle, calls))
+    await latency.measure('persistence', () => persistRescore(handle, calls))
 
     await completeScanJob(job.id)
     latency.logSummary('done')
@@ -91,34 +97,40 @@ async function processFullScanJob(job: any) {
     await updateScanJob(job.id, { stage: 'fetching_profile', progress: 12, progress_message: 'Reading X profile' })
     const user = await latency.measure('profile_fetch', () => getXUser(handle))
 
+    // A known account is only read since its last scan, with a day of overlap. Its earlier posts are already stored.
+    const lastScannedAt = await getLastScannedAt(handle)
+    const days = lastScannedAt
+      ? Math.min(LOOKBACK_DAYS, Math.ceil((Date.now() - Date.parse(lastScannedAt)) / DAY_MS) + 1)
+      : LOOKBACK_DAYS
+    const stored = lastScannedAt ? await getStoredClassifiedTweets(handle) : []
+    const storedIds = new Set(stored.map((tweet) => tweet.id))
+
     let seenTweets = 0
-    await updateScanJob(job.id, { stage: 'fetching_tweets', progress: 20, progress_message: `Scanning ${LOOKBACK_DAYS} days of tweets` })
+    await updateScanJob(job.id, { stage: 'fetching_tweets', progress: 20, progress_message: `Scanning ${days} days of tweets` })
     const tweets = await latency.measure('tweet_fetch', () => getAuthorTimeline(handle, {
-      days: LOOKBACK_DAYS,
+      days,
       onPage(page) {
         seenTweets += page.length
         updateScanJob(job.id, {
           stage: 'fetching_tweets',
           progress: Math.min(45, 20 + Math.floor(seenTweets / 100)),
-          progress_message: `Scanning ${LOOKBACK_DAYS} days of tweets`,
+          progress_message: `Scanning ${days} days of tweets`,
           tweets_scanned: seenTweets,
         }).catch(() => {})
       },
     }))
 
     await updateScanJob(job.id, { stage: 'prefiltering', progress: 48, tweets_scanned: tweets.length, progress_message: 'Finding ticker mentions' })
-    const candidates = await latency.measure('prefilter', () => candidatesFromTweets(tweets))
+    const candidates = await latency.measure('prefilter', () => candidatesFromTweets(tweets).filter((tweet) => !storedIds.has(tweet.id)))
     await updateScanJob(job.id, { stage: 'classifying', progress: 55, candidates: candidates.length, progress_message: 'Classifying BULL and BEAR calls' })
-    const classified = await latency.measure('classification', async () => filterIgnoredCashtags(user.handle, await classifyCandidates(candidates, {
-      batchSize: Number(process.env.OPENAI_CLASSIFY_BATCH_SIZE ?? 12),
-      concurrency: Number(process.env.OPENAI_CLASSIFY_CONCURRENCY ?? 4),
-    })))
+    const classified = await latency.measure('classification', async () => filterIgnoredCashtags(user.handle, await classifyCandidates(candidates)))
 
     await updateScanJob(job.id, { stage: 'pricing', progress: 75, classified: classified.length, progress_message: 'Pricing first calls' })
-    const { calls, stats } = await latency.measure('pricing_scoring', () => scoreCalls(user.handle, classified))
+    const [resolved, settled] = await Promise.all([storedInstruments(handle), settledCallouts(handle)])
+    const { calls } = await latency.measure('pricing_scoring', () => scoreCalls(user.handle, [...stored, ...classified], { resolved, resolveMissing: true, settled }))
 
     await updateScanJob(job.id, { stage: 'persisting', progress: 92, calls_found: calls.length, priced_calls: calls.length, progress_message: 'Saving scorecard' })
-    await latency.measure('persistence', () => persistScorecard({ user, classifiedTweets: classified, calls, stats }))
+    await latency.measure('persistence', () => persistScorecard({ user, classifiedTweets: classified, calls }))
 
     await completeScanJob(job.id)
     latency.logSummary('done')
@@ -129,24 +141,27 @@ async function processFullScanJob(job: any) {
   }
 }
 
-function toScoredCall(row: any) {
-  return {
-    handle: row.handle,
-    asset: row.asset,
+// The instrument each of a handle's assets was priced against at its last scan.
+async function storedInstruments(handle: string) {
+  const sources = await getStoredAssetSources(handle)
+  return new Map(sources.map((row: any): [string, ResolvedAsset] => [row.asset, {
+    symbol: row.asset,
     assetClass: row.asset_class,
     sourceId: row.source_id,
-    direction: row.direction,
-    firstPitchAt: row.first_pitch_at,
-    firstTweetId: row.first_tweet_id,
+    name: null,
+    provider: row.asset_class === 'crypto' ? 'hyperliquid' : 'yahoo',
+  }]))
+}
+
+async function settledCallouts(handle: string) {
+  const rows = await getSettledCallouts(handle)
+  return new Map(rows.map((row: any): [string, SettledCallout] => [settledKey(row.tweet_id, row.asset, row.direction), {
     entryPrice: row.entry_price,
-    currentPrice: row.current_price,
-    returnPct: row.return_pct,
-    isUp: row.is_up,
-    mentions: row.mentions,
-    bulls: row.bulls,
-    bears: row.bears,
-    pricedAt: row.priced_at,
-  }
+    entryAt: row.entry_at,
+    return7d: row.return_7d,
+    return30d: row.return_30d,
+    return90d: row.return_90d,
+  }]))
 }
 
 function sleep(ms: number) {

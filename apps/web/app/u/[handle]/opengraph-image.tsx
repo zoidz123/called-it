@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og'
 import { apiGet } from '../../../lib/api'
 import { formatNumber, formatPct } from '../../../lib/format'
-import { buildAssetRows, formatDate, topShareRows, type Scorecard, type ShareCallRow } from '../../../lib/scorecard'
+import { formatDate, money, topShareRows, type Scorecard, type ShareCallRow } from '../../../lib/scorecard'
 import { getSiteUrl } from '../../../lib/site'
 
 export const runtime = 'nodejs'
@@ -10,14 +10,17 @@ export const alt = 'Called It scorecard share card'
 export const size = { width: 2400, height: 1260 }
 export const contentType = 'image/png'
 
+// The Pluto desk palette, at the 2x scale this image renders at.
 const COLORS = {
-  yellow: '#ffc20f',
-  ink: '#171717',
-  paper: '#fffdf4',
-  paperSoft: '#f7efe0',
-  muted: '#6a6049',
-  green: '#138d46',
-  red: '#c0392b',
+  yellow: '#e9e9e4',
+  ink: '#121212',
+  edge: '#45453f',
+  paper: '#ffffff',
+  paperSoft: '#f4f4f0',
+  muted: '#8e8e88',
+  accent: '#2f5bff',
+  green: '#1d7a3a',
+  red: '#b3261e',
 }
 
 export default async function Image({ params }: { params: Promise<{ handle: string }> }) {
@@ -31,7 +34,7 @@ export default async function Image({ params }: { params: Promise<{ handle: stri
     })
   }
 
-  const rows = topShareRows(buildAssetRows(data), 3)
+  const rows = topShareRows(data.calls, 3)
   const avatar = await loadAvatar(data.user.avatar_url).catch(() => null)
 
   return new ImageResponse(<ShareCard data={data} rows={rows} avatar={avatar} />, {
@@ -82,12 +85,15 @@ async function loadAvatar(avatarUrl: string | null) {
 function ShareCard({ data, rows, avatar }: { data: Scorecard; rows: ShareCallRow[]; avatar: string | null }) {
   const user = data.user
   const displayName = fitText(user.name || user.handle, 28)
+  const calls = user.calls_30d ?? 0
+  const wins = Math.round((user.hit_rate_30d ?? 0) * calls)
+  const avg = user.avg_return_30d ?? 0
 
   return (
     <div style={rootStyle}>
       <div style={frameStyle}>
         <div style={topRowStyle}>
-          <div style={brandStyle}>Called It</div>
+          <div style={brandStyle}>Called It<span style={{ color: COLORS.accent }}>.</span></div>
           <div style={taglineStyle}>Find the traders who spotted the move early.</div>
         </div>
 
@@ -98,20 +104,19 @@ function ShareCard({ data, rows, avatar }: { data: Scorecard; rows: ShareCallRow
             <div style={handleStyle}>@{user.handle} · {formatNumber(user.followers)} followers</div>
           </div>
           <div style={statsGridStyle}>
-            <Stat label="Avg move" value={formatPct(user.avg_return ?? 0)} tone={(user.avg_return ?? 0) >= 0 ? 'good' : 'bad'} />
-            <Stat label="Median" value={formatPct(user.median_return ?? 0)} tone={(user.median_return ?? 0) >= 0 ? 'good' : 'bad'} />
-            <Stat label="Hit rate" value={`${Math.round((user.hit_rate ?? 0) * 100)}%`} />
-            <Stat label="Hits" value={`${user.calls_up}/${user.calls_total}`} />
+            <Stat label="$1,000 became" value={calls > 0 ? money(avg) : '-'} tone={calls > 0 ? (avg >= 0 ? 'good' : 'bad') : undefined} />
+            <Stat label="Average call" value={calls > 0 ? formatPct(avg) : '-'} tone={calls > 0 ? (avg >= 0 ? 'good' : 'bad') : undefined} />
+            <Stat label="Wins-losses" value={`${wins}-${calls - wins}`} />
           </div>
         </div>
 
         <div style={callsWrapStyle}>
-          <div style={callsHeaderStyle}>Best public calls</div>
+          <div style={callsHeaderStyle}>Best calls, 30 days later</div>
           <div style={callsListStyle}>
             {rows.length ? rows.map((row, index) => (
               <CallRow key={`${row.asset}-${row.firstPitchAt}`} index={index} row={row} />
             )) : (
-              <div style={emptyStyle}>No priced calls yet.</div>
+              <div style={emptyStyle}>No call is 30 days old yet.</div>
             )}
           </div>
         </div>
@@ -126,8 +131,8 @@ function FallbackCard({ handle }: { handle: string }) {
   return (
     <div style={rootStyle}>
       <div style={frameStyle}>
-        <div style={brandStyle}>Called It</div>
-        <div style={{ display: 'flex', marginTop: 56, fontSize: 72, fontWeight: 900, lineHeight: 1.06 }}>
+        <div style={brandStyle}>Called It<span style={{ color: COLORS.accent }}>.</span></div>
+        <div style={{ display: 'flex', marginTop: 56, fontSize: 72, fontWeight: 600, lineHeight: 1.06 }}>
           @{handle.replace(/^@/, '')}
         </div>
         <div style={{ display: 'flex', marginTop: 18, color: COLORS.muted, fontSize: 32, fontWeight: 800 }}>
@@ -145,7 +150,7 @@ function AvatarBlock({ avatar, name }: { avatar: string | null; name: string }) 
         // eslint-disable-next-line @next/next/no-img-element
         <img src={avatar} alt="" width={184} height={184} style={{ width: 184, height: 184, objectFit: 'cover' }} />
       ) : (
-        <span style={{ display: 'flex', fontSize: 84, fontWeight: 900 }}>{(name || '?').slice(0, 1).toUpperCase()}</span>
+        <span style={{ display: 'flex', fontSize: 84, fontWeight: 600 }}>{(name || '?').slice(0, 1).toUpperCase()}</span>
       )}
     </div>
   )
@@ -156,7 +161,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: 'go
   return (
     <div style={statStyle}>
       <span style={statLabelStyle}>{label}</span>
-      <b style={{ display: 'flex', color, fontSize: 56, fontWeight: 900, lineHeight: 1 }}>{value}</b>
+      <b style={{ display: 'flex', color, fontSize: 56, fontWeight: 600, lineHeight: 1 }}>{value}</b>
     </div>
   )
 }
@@ -169,13 +174,13 @@ function CallRow({ index, row }: { index: number; row: ShareCallRow }) {
       <div style={{
         ...actionStyle,
         color: row.direction === 'BEAR' ? COLORS.red : COLORS.green,
-        backgroundColor: row.direction === 'BEAR' ? '#fde8e5' : '#e1f7e9',
+        backgroundColor: row.direction === 'BEAR' ? '#fde7e5' : '#e3f3e8',
       }}>{row.action}</div>
       <div style={tickerStyle}>{row.asset}</div>
-      <div style={{ display: 'flex', marginLeft: 'auto', color: toneColor, fontSize: 72, fontWeight: 900 }}>
+      <div style={{ display: 'flex', marginLeft: 'auto', color: toneColor, fontSize: 72, fontWeight: 600 }}>
         {formatPct(row.returnPct)}
       </div>
-      <div style={dateStyle}>First mentioned {formatDate(row.firstPitchAt)}</div>
+      <div style={dateStyle}>Called {formatDate(row.firstPitchAt)}</div>
     </div>
   )
 }
@@ -200,10 +205,10 @@ const frameStyle = {
   display: 'flex',
   flexDirection: 'column',
   padding: '52px 76px 44px',
-  border: `16px solid ${COLORS.ink}`,
-  borderRadius: 60,
+  border: `3px solid ${COLORS.edge}`,
+  borderRadius: 10,
   backgroundColor: COLORS.paper,
-  boxShadow: `20px 24px 0 ${COLORS.ink}`,
+  boxShadow: `8px 8px 0 ${COLORS.edge}`,
 } as const
 
 const topRowStyle = {
@@ -214,12 +219,9 @@ const topRowStyle = {
 
 const brandStyle = {
   display: 'flex',
-  padding: '16px 36px 12px',
-  border: `10px solid ${COLORS.ink}`,
-  borderRadius: 24,
-  backgroundColor: COLORS.paper,
   fontSize: 76,
-  fontWeight: 900,
+  letterSpacing: -2,
+  fontWeight: 600,
   lineHeight: 1,
 } as const
 
@@ -227,7 +229,7 @@ const taglineStyle = {
   display: 'flex',
   color: COLORS.muted,
   fontSize: 42,
-  fontWeight: 900,
+  fontWeight: 600,
 } as const
 
 const profileRowStyle = {
@@ -236,8 +238,8 @@ const profileRowStyle = {
   gap: 36,
   marginTop: 40,
   padding: 28,
-  border: `8px solid ${COLORS.ink}`,
-  borderRadius: 36,
+  border: `3px solid ${COLORS.edge}`,
+  borderRadius: 10,
   backgroundColor: COLORS.paperSoft,
 } as const
 
@@ -248,8 +250,8 @@ const avatarStyle = {
   alignItems: 'center',
   justifyContent: 'center',
   overflow: 'hidden',
-  border: `8px solid ${COLORS.ink}`,
-  borderRadius: 32,
+  border: `3px solid ${COLORS.edge}`,
+  borderRadius: 10,
   backgroundColor: COLORS.paper,
   flexShrink: 0,
 } as const
@@ -257,7 +259,7 @@ const avatarStyle = {
 const nameStyle = {
   display: 'flex',
   fontSize: 84,
-  fontWeight: 900,
+  fontWeight: 600,
   lineHeight: 1,
   whiteSpace: 'nowrap',
 } as const
@@ -267,15 +269,15 @@ const handleStyle = {
   marginTop: 14,
   color: COLORS.muted,
   fontSize: 42,
-  fontWeight: 900,
+  fontWeight: 600,
 } as const
 
 const statsGridStyle = {
   display: 'flex',
   width: 876,
   height: 184,
-  border: `6px solid ${COLORS.ink}`,
-  borderRadius: 28,
+  border: `3px solid ${COLORS.edge}`,
+  borderRadius: 10,
   overflow: 'hidden',
   backgroundColor: COLORS.paper,
   flexShrink: 0,
@@ -286,7 +288,7 @@ const statStyle = {
   flexDirection: 'column',
   justifyContent: 'center',
   alignItems: 'center',
-  width: '25%',
+  width: '33.34%',
   borderRight: `2px solid rgba(24,24,24,.24)`,
   gap: 14,
 } as const
@@ -295,7 +297,7 @@ const statLabelStyle = {
   display: 'flex',
   color: COLORS.muted,
   fontSize: 26,
-  fontWeight: 900,
+  fontWeight: 600,
   textTransform: 'uppercase',
 } as const
 
@@ -303,18 +305,20 @@ const callsWrapStyle = {
   display: 'flex',
   flexDirection: 'column',
   marginTop: 32,
-  border: `8px solid ${COLORS.ink}`,
-  borderRadius: 36,
+  border: `3px solid ${COLORS.edge}`,
+  borderRadius: 10,
   overflow: 'hidden',
 } as const
 
 const callsHeaderStyle = {
   display: 'flex',
   padding: '20px 36px',
-  backgroundColor: COLORS.ink,
-  color: COLORS.paper,
-  fontSize: 44,
-  fontWeight: 900,
+  backgroundColor: COLORS.paperSoft,
+  color: COLORS.muted,
+  fontSize: 34,
+  letterSpacing: 3,
+  textTransform: 'uppercase',
+  fontWeight: 600,
 } as const
 
 const callsListStyle = {
@@ -338,11 +342,11 @@ const rankStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  border: `6px solid ${COLORS.ink}`,
-  borderRadius: 20,
-  backgroundColor: COLORS.yellow,
+  border: `3px solid ${COLORS.edge}`,
+  borderRadius: 10,
+  backgroundColor: COLORS.paperSoft,
   fontSize: 38,
-  fontWeight: 900,
+  fontWeight: 600,
   flexShrink: 0,
 } as const
 
@@ -352,18 +356,18 @@ const actionStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  border: `6px solid currentColor`,
-  borderRadius: 16,
+  border: `3px solid currentColor`,
+  borderRadius: 10,
   fontSize: 34,
-  fontWeight: 900,
+  fontWeight: 600,
   flexShrink: 0,
 } as const
 
 const tickerStyle = {
   display: 'flex',
-  color: COLORS.green,
+  color: COLORS.ink,
   fontSize: 58,
-  fontWeight: 900,
+  fontWeight: 600,
   minWidth: 252,
 } as const
 
@@ -373,7 +377,7 @@ const dateStyle = {
   justifyContent: 'flex-end',
   color: COLORS.muted,
   fontSize: 34,
-  fontWeight: 900,
+  fontWeight: 600,
   textAlign: 'right',
   flexShrink: 0,
 } as const
@@ -383,7 +387,7 @@ const emptyStyle = {
   padding: 56,
   color: COLORS.muted,
   fontSize: 50,
-  fontWeight: 900,
+  fontWeight: 600,
 } as const
 
 const footerStyle = {
@@ -392,5 +396,5 @@ const footerStyle = {
   justifyContent: 'flex-end',
   color: COLORS.muted,
   fontSize: 32,
-  fontWeight: 900,
+  fontWeight: 600,
 } as const

@@ -41,7 +41,19 @@ export function generateMetadata(): Metadata {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=DM+Mono:wght@400;500&display=swap"
+        />
+      </head>
       <body>
+        <header className="taskbar">
+          <a className="brand" href="/">Called It<span>.</span></a>
+          <a className="taskbar-item" href="/">Leaderboard</a>
+        </header>
         {children}
       </body>
     </html>

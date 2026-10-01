@@ -8,20 +8,26 @@ Called It is an experimental measurement tool, not investment advice or a comple
 ## How it works
 
 1. The API validates an X handle and reuses a fresh scorecard when one exists.
-2. A worker fetches the public profile and timeline, extracts cashtags, and asks OpenAI to classify high-conviction bullish or bearish calls.
+2. A worker fetches the public profile and timeline, extracts cashtags, and asks TypeSafe's Jev model to classify high-conviction bullish or bearish calls.
+   A post that reads as sarcastic is dropped.
 3. Shared pricing logic resolves assets and looks up historical and current market prices.
 4. The worker stores the scorecard in Postgres for the Next.js web app and public API.
 
-The default scan window is 365 days.
-The score starts each call from the previous available daily close, adjusts returns for bullish or bearish direction, and starts a new leg when the classified stance changes.
-Hit rate is the share of priced call legs with a positive direction-adjusted return.
+The first scan of an account reads the past 365 days.
+Later scans read only posts since the last scan, classify only those, and keep everything already stored.
+Every post that makes a call is its own call.
+It is priced from the first price after the post, using hourly bars where the venue still serves them, to the last price 7, 30 and 90 days later.
+A bearish call is scored as a short, so it gains when the price falls.
+A call has no result at a horizon until it is that old, and a call whose three horizons have all settled is never repriced.
+The headline is what $1,000 put into every call became, which is the average return at that horizon.
+A win is a call with a positive return.
 
 ## Prerequisites
 
 - [Bun](https://bun.sh/) 1.3 or newer.
 - A Postgres database reachable through `@neondatabase/serverless`; Neon is the currently tested provider.
 - A [TwitterAPI.io](https://twitterapi.io/) key for X profile and timeline data.
-- An [OpenAI API](https://developers.openai.com/api/docs/overview) key for call classification and ambiguous ticker resolution.
+- A [TypeSafe AI](https://docs.typesafe.ai/introduction/quickstart) key. Its Jev model classifies calls and resolves ambiguous tickers.
 
 Yahoo Finance chart and search endpoints provide equity and ETF data without a repository credential.
 [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api) public APIs provide crypto and perpetual-market data.
@@ -51,7 +57,7 @@ Open `http://127.0.0.1:3002`.
 The API defaults to `http://127.0.0.1:3001`.
 
 The UI and API run locally, but a complete scan is not offline-only.
-It requires Postgres, TwitterAPI.io, OpenAI, Yahoo Finance, and Hyperliquid network access.
+It requires Postgres, TwitterAPI.io, TypeSafe, Yahoo Finance, and Hyperliquid network access.
 Ignored files under `.cache/twitter/` can replace some X and classification requests for development, but no cache or proprietary dataset is included.
 
 ## Configuration
@@ -62,14 +68,14 @@ Never commit a populated environment file, Neon link file, provider credential, 
 | Variable | Requirement | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | API and migrations | Postgres connection string. |
-| `OPENAI_API_KEY` | New scans | Classification and ambiguous asset resolution. |
+| `TYPESAFE_API_KEY` | New scans | Call classification and ambiguous asset resolution with TypeSafe's Jev model. |
 | `TWITTERAPI_IO_API_KEYS` | New scans | Comma-separated TwitterAPI.io key pool. |
 | `NEXT_PUBLIC_API_URL` | Production web build | Browser-visible base URL for the API. |
 | `NEXT_PUBLIC_SITE_URL` | Production web build | Canonical public URL used for metadata and share images. |
 | `CORS_ORIGIN` | Production API | Comma-separated browser origins allowed to call the API. |
 
 The scanner also accepts one key through `TWITTERAPI_IO_API_KEY`, `TWITTERAPI_IO_FALLBACK_API_KEY`, or the legacy `TWITTERAPI_IO_API_KEY_4` alias.
-Common optional controls include `API_PORT`, `WEB_PORT`, `SCAN_WORKER_ENABLED`, `TWITTER_LOOKBACK_DAYS`, `TWITTER_WINDOW_DAYS`, `TWITTER_MAX_PAGES_PER_WINDOW`, `TWITTERAPI_IO_FETCH_CONCURRENCY`, `OPENAI_MODEL`, `OPENAI_CLASSIFY_BATCH_SIZE`, `OPENAI_CLASSIFY_CONCURRENCY`, and `PRICING_CONCURRENCY`.
+Common optional controls include `API_PORT`, `WEB_PORT`, `SCAN_WORKER_ENABLED`, `TWITTER_LOOKBACK_DAYS`, `TWITTER_WINDOW_DAYS`, `TWITTER_MAX_PAGES_PER_WINDOW`, `TWITTERAPI_IO_FETCH_CONCURRENCY`, `TYPESAFE_MODEL`, and `PRICING_CONCURRENCY`.
 See the provider adapters for the remaining tuning controls.
 
 Missing database or worker credentials fail before the corresponding process starts.
