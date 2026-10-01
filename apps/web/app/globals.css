@@ -1100,11 +1100,19 @@ em.move {
   font-weight: 400;
 }
 
+/* The chart stays put on the left while its posts scroll beside it. */
 .asset-thread {
   display: grid;
-  gap: var(--s-3);
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--s-3) var(--s-4);
   padding: var(--s-4);
   border-top: var(--border-soft);
+}
+
+.thread-chart {
+  display: grid;
+  align-content: start;
+  gap: var(--s-3);
 }
 
 .chart-legend {
@@ -1124,7 +1132,7 @@ em.move {
 }
 
 .price-chart-canvas {
-  height: 340px;
+  height: 460px;
 }
 
 .chart-marks {
@@ -1233,13 +1241,15 @@ em.move {
   font-weight: 500;
 }
 
+/* Size containment keeps the list out of the row's height, so it is exactly as tall as the chart beside it. */
 .thread-list {
   display: grid;
+  align-content: start;
   gap: var(--s-2);
-  max-height: 420px;
   margin: 0;
   padding: 0;
   overflow-y: auto;
+  contain: size;
   list-style: none;
 }
 
@@ -1254,10 +1264,12 @@ em.move {
 
 .thread-post.selected {
   border-color: var(--edge);
+  background: var(--soft);
 }
 
 .thread-post header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--s-2);
   color: var(--mid);
@@ -1282,6 +1294,11 @@ em.move {
   font-size: var(--t-sm);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.asset-flag-button,
+.asset-feedback-form {
+  grid-column: 1 / -1;
 }
 
 .asset-flag-button {
@@ -1347,6 +1364,39 @@ em.move {
   .home-header {
     grid-template-columns: 1fr;
   }
+
+  /* Stacked thread: the chart pins to the top while its posts scroll under it with the page. */
+  .asset-thread {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .thread-chart {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin-top: calc(-1 * var(--s-2));
+    padding: var(--s-2) 0;
+    background: var(--win);
+  }
+
+  .price-chart-canvas {
+    height: 280px;
+  }
+
+  .thread-list {
+    overflow-y: visible;
+    contain: none;
+  }
+
+  /* A post scrolled to lands right under the pinned chart: its height plus the legend, padding and one list gap. */
+  .thread-post {
+    scroll-margin-top: 336px;
+  }
+
+  .asset-flag-button {
+    align-self: flex-start;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1396,7 +1446,11 @@ em.move {
   }
 
   .price-chart-canvas {
-    height: 240px;
+    height: 200px;
+  }
+
+  .thread-post {
+    scroll-margin-top: 256px;
   }
 
   .money-cell span {
@@ -1415,10 +1469,6 @@ em.move {
 
   .asset-row-summary {
     grid-template-columns: minmax(0, 1fr) 96px;
-  }
-
-  .thread-post header {
-    flex-wrap: wrap;
   }
 
   .asset-thread {

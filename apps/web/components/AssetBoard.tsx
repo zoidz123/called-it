@@ -13,6 +13,8 @@ type Thread = { callouts: Callout[]; prices: ChartBar[] }
 type FeedbackStatus = 'idle' | 'sending' | 'sent' | 'error'
 
 const PAGE_SIZE = 15
+// Below this width the thread stacks: chart pinned on top, posts scrolling with the page. Matches the breakpoint in globals.css.
+const STACKED = '(max-width: 860px)'
 
 // One row per asset. Opening a row loads its thread: the price chart with every callout on it, then the posts themselves.
 export function AssetBoard({ assetRows, handle, horizon, updatedLabel }: { assetRows: AssetRow[]; handle: string; horizon: Horizon; updatedLabel: string }) {
@@ -83,6 +85,30 @@ function AssetThread({ handle, row, horizon }: { handle: string; row: AssetRow; 
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const listRef = useRef<HTMLOListElement>(null)
+  const chartRef = useRef<HTMLDivElement>(null)
+  // While a clicked dot's post is scrolling into place, the scroll position must not pick a different post.
+  const jumpUntil = useRef(0)
+
+  // On narrow screens the chart pins above the posts, and the post being read is the selected one.
+  useEffect(() => {
+    if (!thread) return
+    const stacked = window.matchMedia(STACKED)
+    let frame = 0
+    const sync = () => {
+      frame = 0
+      const chart = chartRef.current
+      if (!stacked.matches || !chart || !listRef.current || Date.now() < jumpUntil.current) return
+      const edge = chart.getBoundingClientRect().bottom + 24
+      const reading = [...listRef.current.querySelectorAll<HTMLElement>('[data-tweet]')].find((post) => post.getBoundingClientRect().bottom > edge)
+      if (reading?.dataset.tweet) setSelectedId(reading.dataset.tweet)
+    }
+    const onScroll = () => { frame ||= requestAnimationFrame(sync) }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      cancelAnimationFrame(frame)
+    }
+  }, [thread])
 
   useEffect(() => {
     let alive = true
@@ -98,7 +124,10 @@ function AssetThread({ handle, row, horizon }: { handle: string; row: AssetRow; 
 
   function select(tweetId: string) {
     setSelectedId(tweetId)
-    listRef.current?.querySelector(`[data-tweet="${tweetId}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    jumpUntil.current = Date.now() + 900
+    // Stacked, the post lands just under the pinned chart; side by side, only the list needs to move.
+    const block = window.matchMedia(STACKED).matches ? 'start' : 'nearest'
+    listRef.current?.querySelector(`[data-tweet="${tweetId}"]`)?.scrollIntoView({ block, behavior: 'smooth' })
   }
 
   if (error) return <div className="asset-thread"><p className="status-line">{error}</p></div>
@@ -106,11 +135,13 @@ function AssetThread({ handle, row, horizon }: { handle: string; row: AssetRow; 
 
   return (
     <div className="asset-thread">
-      <div className="chart-legend">
-        <span><i className="chart-mark bull" /> Bullish post</span>
-        <span><i className="chart-mark bear" /> Bearish post</span>
+      <div className="thread-chart" ref={chartRef}>
+        <div className="chart-legend">
+          <span><i className="chart-mark bull" /> Bullish post</span>
+          <span><i className="chart-mark bear" /> Bearish post</span>
+        </div>
+        <PriceChart bars={thread.prices} callouts={thread.callouts} horizon={horizon} selectedId={selectedId} onSelect={select} />
       </div>
-      <PriceChart bars={thread.prices} callouts={thread.callouts} horizon={horizon} selectedId={selectedId} onSelect={select} />
       <ol className="thread-list" ref={listRef}>
         {[...thread.callouts].reverse().map((callout) => (
           <li
