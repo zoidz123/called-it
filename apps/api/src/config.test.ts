@@ -2,15 +2,15 @@ import { describe, expect, test } from 'bun:test'
 import { corsOrigin, scanIsConfigured, visitorAddress } from './config'
 
 describe('visitorAddress', () => {
-  test('takes the address the proxy appended, not one the visitor sent', () => {
-    expect(visitorAddress('1.2.3.4, 203.0.113.9', '10.0.0.1')).toBe('203.0.113.9')
-    expect(visitorAddress('203.0.113.9', '10.0.0.1')).toBe('203.0.113.9')
-    expect(visitorAddress(['1.2.3.4', '203.0.113.9'], undefined)).toBe('203.0.113.9')
+  test('takes the address the edge reports, whatever the forwarding chain says', () => {
+    // What Railway sends: the chain ends with a rotating edge server, so only X-Real-IP identifies the visitor.
+    expect(visitorAddress({ 'x-real-ip': '203.0.113.9', 'x-forwarded-for': '203.0.113.9, 84.17.44.228' }, '100.64.0.2')).toBe('203.0.113.9')
+    expect(visitorAddress({ 'x-real-ip': '203.0.113.9', 'x-forwarded-for': '203.0.113.9, 84.17.44.225' }, '100.64.0.3')).toBe('203.0.113.9')
   })
 
   test('falls back to the connection when no proxy is in front', () => {
-    expect(visitorAddress(undefined, '127.0.0.1')).toBe('127.0.0.1')
-    expect(visitorAddress('', undefined)).toBe('unknown')
+    expect(visitorAddress({}, '127.0.0.1')).toBe('127.0.0.1')
+    expect(visitorAddress({ 'x-real-ip': '  ' }, undefined)).toBe('unknown')
   })
 })
 

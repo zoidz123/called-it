@@ -11,11 +11,13 @@ export function scanIsConfigured(env: Readonly<Record<string, string | undefined
     && TWITTER_KEY_NAMES.some((name) => Boolean(env[name]?.trim()))
 }
 
-// The address a request came from. The host's proxy appends the address it saw to X-Forwarded-For, so the last
-// entry is the visitor's; anything before it was sent by the visitor and cannot be trusted.
-export function visitorAddress(forwardedFor: string | string[] | undefined, fallback: string | undefined) {
-  const forwarded = (Array.isArray(forwardedFor) ? forwardedFor.join(',') : forwardedFor ?? '').split(',').map((entry) => entry.trim()).filter(Boolean)
-  return forwarded.at(-1) ?? fallback ?? 'unknown'
+// The address a request came from. Railway's edge sets X-Real-IP to the visitor's address and overwrites any value
+// the visitor sends, so that header is the one to trust. Its X-Forwarded-For ends with the edge server's own
+// address, which changes from request to request, so it cannot tell visitors apart. With no proxy in front, as in
+// local development, the connection's address is used.
+export function visitorAddress(headers: Record<string, string | string[] | undefined>, fallback: string | undefined) {
+  const realIp = headers['x-real-ip']
+  return (Array.isArray(realIp) ? realIp[0] : realIp)?.trim() || fallback || 'unknown'
 }
 
 export function corsOrigin(env: Readonly<Record<string, string | undefined>> = process.env): true | string[] {

@@ -279,7 +279,7 @@ function checkFeedbackGate(request: any, handle: string, asset: string, suggeste
 }
 
 function readClientIp(request: any) {
-  return visitorAddress(request.headers['x-forwarded-for'], request.ip ?? request.socket?.remoteAddress)
+  return visitorAddress(request.headers, request.ip ?? request.socket?.remoteAddress)
 }
 
 // A visitor, for counting their scans. The address is hashed with a secret, so what is stored cannot be turned back
