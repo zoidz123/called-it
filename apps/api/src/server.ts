@@ -285,6 +285,10 @@ function readClientIp(request: any) {
 // A visitor, for counting their scans. The address is hashed with a secret, so what is stored cannot be turned back
 // into an address.
 function visitorKey(request: any) {
+  // Shows how the host's proxy reports addresses, for checking the limit keys on the right one.
+  if (process.env.DEBUG_VISITOR === '1') {
+    console.log(`[visitor] ${JSON.stringify({ forwardedFor: request.headers['x-forwarded-for'], realIp: request.headers['x-real-ip'], ip: request.ip, envoy: request.headers['x-envoy-external-address'] })}`)
+  }
   return hashValue(`${readClientIp(request)}|${process.env.DATABASE_URL ?? ''}`).slice(0, 32)
 }
 
