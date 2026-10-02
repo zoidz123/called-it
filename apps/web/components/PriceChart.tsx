@@ -76,8 +76,7 @@ export function PriceChart({
       grid: { vertLines: { color: c.soft }, horzLines: { color: c.soft } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false },
-      // The price axis stays automatic, so the dots only ever need re-placing when the time range changes.
-      handleScale: { axisPressedMouseMove: { time: true, price: false } },
+      handleScale: { axisPressedMouseMove: { time: true, price: true } },
       localization: { priceFormatter: formatPrice },
     })
     // Candles keep TradingView's standard green and red.
@@ -96,9 +95,35 @@ export function PriceChart({
     observer.observe(frame.current)
     // The price scale settles on the first paint, one frame after the data is set.
     const settle = setTimeout(replace, 60)
+
+    // Dragging the price axis rescales it, and the chart reports no event for that. The dots follow the pointer for
+    // as long as a drag that began on the chart lasts, even once it leaves the chart, and follow the wheel.
+    const canvas = frame.current
+    let dragging = false
+    const down = () => { dragging = true }
+    const move = () => { if (dragging) replace() }
+    const up = () => {
+      if (!dragging) return
+      dragging = false
+      replace()
+    }
+    // A double click on the price axis returns it to automatic, which lands a frame later.
+    const reset = () => setTimeout(replace, 60)
+    canvas.addEventListener('pointerdown', down)
+    canvas.addEventListener('wheel', replace, { passive: true })
+    canvas.addEventListener('dblclick', reset)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
     return () => {
       clearTimeout(settle)
       observer.disconnect()
+      canvas.removeEventListener('pointerdown', down)
+      canvas.removeEventListener('wheel', replace)
+      canvas.removeEventListener('dblclick', reset)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       chartRef.current = null
       chart.remove()
     }
