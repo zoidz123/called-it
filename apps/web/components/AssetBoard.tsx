@@ -1,6 +1,6 @@
 'use client'
 
-import { ExternalLink, Flag } from 'lucide-react'
+import { ExternalLink, Flag, Image as ImageIcon } from 'lucide-react'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { API_URL } from '../lib/api'
 import { formatPct } from '../lib/format'
@@ -158,6 +158,7 @@ function AssetThread({ handle, row, horizon }: { handle: string; row: AssetRow; 
               </span>
               <span className="thread-markout">
                 <Outcome value={callout[`return_${horizon}d`]} />
+                <CopyImage handle={handle} asset={row.asset} tweetId={callout.tweet_id} horizon={horizon} />
                 <a href={callout.url} target="_blank" rel="noreferrer" aria-label="Open post">
                   <ExternalLink size={14} strokeWidth={2} aria-hidden="true" />
                 </a>
@@ -169,6 +170,41 @@ function AssetThread({ handle, row, horizon }: { handle: string; row: AssetRow; 
       </ol>
       <AssetFeedback handle={handle} row={row} />
     </div>
+  )
+}
+
+type CopyState = 'idle' | 'working' | 'copied' | 'failed'
+
+// Copies a post's image to the clipboard, ready to paste into a post on X: the chart with this call picked out, the
+// post, and how it did.
+function CopyImage({ handle, asset, tweetId, horizon }: { handle: string; asset: string; tweetId: string; horizon: Horizon }) {
+  const [state, setState] = useState<CopyState>('idle')
+  const src = `/u/${encodeURIComponent(handle)}/call-image?asset=${encodeURIComponent(asset.replace(/^\$/, ''))}&post=${encodeURIComponent(tweetId)}&h=${horizon}`
+
+  async function copy() {
+    setState('working')
+    try {
+      // Safari only allows a clipboard write that begins inside the click, so the image is handed over as a promise
+      // and fetched while the write is already under way.
+      const image = fetch(src).then((res) => {
+        if (!res.ok) throw new Error('Could not make this image.')
+        return res.blob()
+      })
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })])
+      setState('copied')
+      setTimeout(() => setState('idle'), 2500)
+    } catch {
+      setState('failed')
+    }
+  }
+
+  // A browser that will not take an image on the clipboard still gets the image, to save or copy by hand.
+  if (state === 'failed') return <a className="thread-copy" href={src} target="_blank" rel="noreferrer">Open image</a>
+  return (
+    <button type="button" className="thread-copy" onClick={copy} disabled={state === 'working'}>
+      <ImageIcon size={12} strokeWidth={2} aria-hidden="true" />
+      {state === 'working' ? 'Making image...' : state === 'copied' ? 'Copied' : 'Copy image'}
+    </button>
   )
 }
 

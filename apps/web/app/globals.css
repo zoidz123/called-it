@@ -1270,6 +1270,24 @@ em.move {
   display: inline-flex;
 }
 
+.thread-post header .thread-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  border: var(--border-soft);
+  border-radius: var(--r-ctl);
+  padding: 1px 6px;
+  background: var(--win);
+  color: var(--mid);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+}
+
+.thread-post header .thread-copy:hover:not(:disabled) {
+  border-color: var(--edge);
+  color: var(--ink);
+}
+
 .thread-post header a:hover {
   color: var(--ink);
 }
