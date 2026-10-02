@@ -6,12 +6,15 @@ import {
   createAssetFeedback,
   createOrReuseScanJob,
   getAssetThread,
+  getFeed,
+  getFeedSummaries,
   getLeaderboard,
   getScanJob,
   getUserScorecard,
   maybeEnqueueStaleRefreshes,
+  saveFeedSummary,
 } from '@called-it/db'
-import { dayKey, getDailyBars, getXUser, loadLocalEnv, parseXHandle, type Bar } from '@called-it/core'
+import { dayKey, directionalReturn, getDailyBars, getLiveMids, getXUser, liveQuote, loadLocalEnv, mapWithConcurrency, parseXHandle, summariesAreConfigured, summarizeIdea, type Bar, type SummaryPost } from '@called-it/core'
 import { startWorkerLoop } from './worker'
 import { corsOrigin, scanIsConfigured } from './config'
 
@@ -22,6 +25,12 @@ const FEEDBACK_MAX_PER_HOUR = clampNumber(process.env.FEEDBACK_MAX_PER_HOUR, 20,
 const FEEDBACK_RATE_WINDOW_MS = 60 * 60 * 1000
 const FEEDBACK_DUPLICATE_WINDOW_MS = 10 * 60 * 1000
 const PRICE_CACHE_TTL_MS = 10 * 60 * 1000
+const FEED_CHART_DAYS = 14
+const LIVE_MIDS_TTL_MS = 5000
+let liveMids: { expiresAt: number; mids: Promise<Record<string, number>> } | null = null
+const SUMMARY_CONCURRENCY = 4
+// Assets whose summary is being written, so concurrent feed loads do not each ask the model.
+const summaryJobs = new Set<string>()
 const priceCache = new Map<string, { expiresAt: number; bars: Promise<Bar[]> }>()
 const feedbackBuckets = new Map<string, { count: number; resetAt: number; fingerprints: Map<string, number> }>()
 
@@ -44,6 +53,31 @@ export async function buildServer() {
       limit,
       offset,
     }
+  })
+
+  app.get('/api/feed', async (request: any) => {
+    const horizon = request.query?.h === '7' ? 7 : request.query?.h === '90' ? 90 : 30
+    const { calls: stored, accounts, sources } = await getFeed({ horizon })
+    const from = new Date(Date.now() - FEED_CHART_DAYS * 24 * 60 * 60 * 1000).toISOString()
+    const mids = await currentMids()
+    // Daily closes per asset for the row's price line, as [time, close].
+    const prices: Record<string, [number, number][]> = {}
+    // Where each asset trades now: Hyperliquid's live mid where it quotes the asset, else the last exchange close.
+    // `coin` names the Hyperliquid feed the page can follow from there.
+    const live: Record<string, { coin: string | null; price: number }> = {}
+    await Promise.all(sources.map(async (source: any) => {
+      const bars = await assetPrices(source, from)
+      const lastClose = bars.at(-1)?.close
+      const quote = liveQuote(source, mids, lastClose)
+      prices[source.asset] = bars.map((bar) => [bar.t, bar.close])
+      const price = quote?.price ?? lastClose
+      if (price) live[source.asset] = { coin: quote?.coin ?? null, price }
+    }))
+    // The move since each call is measured to that price, not to the price stored at the account's last scan.
+    const calls = stored.map((call: any) => (
+      live[call.asset] ? { ...call, return_pct: directionalReturn(call.direction, call.entry_price, live[call.asset].price) } : call
+    ))
+    return { horizon, calls, accounts, prices, live, summaries: await feedSummaries(calls, accounts) }
   })
 
   app.get('/api/users/:handle', async (request: any, reply) => {
@@ -226,6 +260,50 @@ function pruneFeedbackBuckets(now: number) {
   for (const [key, bucket] of feedbackBuckets) {
     if (bucket.resetAt <= now) feedbackBuckets.delete(key)
   }
+}
+
+// Hyperliquid's mids, shared for a few seconds across feed loads. A failed fetch leaves every asset on its last close.
+function currentMids() {
+  if (!liveMids || liveMids.expiresAt <= Date.now()) {
+    liveMids = { expiresAt: Date.now() + LIVE_MIDS_TTL_MS, mids: getLiveMids().catch(() => ({})) }
+  }
+  return liveMids.mids
+}
+
+type SummaryJob = { asset: string; postsKey: string; posts: SummaryPost[] }
+
+// The stored summary of each asset that still matches its posts. An asset whose posts changed gets a new summary
+// written in the background, so the feed never waits on the model and shows it on a later load.
+async function feedSummaries(calls: any[], accounts: any[]) {
+  const names = new Map(accounts.map((account) => [account.handle, account.name]))
+  const jobs = new Map<string, SummaryJob>()
+  for (const call of calls) {
+    const job: SummaryJob = jobs.get(call.asset) ?? { asset: call.asset, postsKey: '', posts: [] }
+    job.posts.push({ name: names.get(call.handle) ?? call.handle, direction: call.direction, text: call.text })
+    job.postsKey += `${call.tweet_id}:${call.direction},`
+    jobs.set(call.asset, job)
+  }
+  for (const job of jobs.values()) job.postsKey = hashValue(job.postsKey).slice(0, 32)
+
+  const stored = await getFeedSummaries([...jobs.keys()])
+  const current = stored.filter((row: any) => jobs.get(row.asset)?.postsKey === row.posts_key)
+  const done = new Set(current.map((row: any) => row.asset))
+  const missing = [...jobs.values()].filter((job) => !done.has(job.asset) && !summaryJobs.has(job.asset))
+  if (missing.length && summariesAreConfigured()) void writeSummaries(missing)
+  return Object.fromEntries(current.map((row: any) => [row.asset, row.summary]))
+}
+
+async function writeSummaries(jobs: SummaryJob[]) {
+  for (const job of jobs) summaryJobs.add(job.asset)
+  await mapWithConcurrency(jobs, SUMMARY_CONCURRENCY, async (job) => {
+    try {
+      await saveFeedSummary({ asset: job.asset, postsKey: job.postsKey, summary: await summarizeIdea(job.asset, job.posts) })
+    } catch (error) {
+      console.error(`feed summary failed for ${job.asset}`, error)
+    } finally {
+      summaryJobs.delete(job.asset)
+    }
+  })
 }
 
 // Daily closes for a thread's chart, shared briefly across viewers so a popular profile is not one upstream fetch per open row.

@@ -22,6 +22,10 @@ A call has no result at a horizon until it is that old, and a call whose three h
 The headline is what $1,000 put into every call became, which is the average return at that horizon.
 A win is a call with a positive return.
 
+The feed at `/feed` groups the past week's calls by asset.
+Each row shows which way the accounts behind it lean, each account's record on that asset, and the move since the calls.
+That move and the current price follow Hyperliquid's live prices in the browser where Hyperliquid quotes the asset, and use the latest Yahoo Finance price otherwise.
+
 ## Prerequisites
 
 - [Bun](https://bun.sh/) 1.3 or newer.
@@ -70,6 +74,7 @@ Never commit a populated environment file, Neon link file, provider credential, 
 | `DATABASE_URL` | API and migrations | Postgres connection string. |
 | `TYPESAFE_API_KEY` | New scans | Call classification and ambiguous asset resolution with TypeSafe's Jev model. |
 | `TWITTERAPI_IO_API_KEYS` | New scans | Comma-separated TwitterAPI.io key pool. |
+| `ANTHROPIC_API_KEY` | Optional | Writes the one-line summary on each feed row. Without it a row quotes a post instead. |
 | `NEXT_PUBLIC_API_URL` | Production web build | Browser-visible base URL for the API. |
 | `NEXT_PUBLIC_SITE_URL` | Production web build | Canonical public URL used for metadata and share images. |
 | `CORS_ORIGIN` | Production API | Comma-separated browser origins allowed to call the API. |

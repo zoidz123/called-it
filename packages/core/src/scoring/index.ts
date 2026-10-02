@@ -158,7 +158,8 @@ function median(values: number[]): number {
   return sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
 }
 
-function directionalReturn(direction: Direction, entry: number, exit: number) {
+// The move from entry to exit, with a bearish call counted as a short.
+export function directionalReturn(direction: Direction, entry: number, exit: number) {
   return direction === 'BULL' ? (exit - entry) / entry : (entry - exit) / entry
 }
 

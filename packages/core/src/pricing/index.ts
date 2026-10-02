@@ -32,6 +32,43 @@ export async function getPriceSeries(asset: ResolvedAsset, from: string): Promis
   }
 }
 
+// Hyperliquid's venue for stocks, indices and commodities. Its coins are named "xyz:TICKER".
+const STOCK_DEX = 'xyz'
+// A stock quote on that venue further than this from the last exchange close is taken to be a different instrument
+// sharing the ticker (xyz:GOLD is the metal, xyz:CL is crude oil), not a move in the stock.
+const MAX_STOCK_GAP = 0.15
+
+// Every mid price Hyperliquid quotes, in two requests: crypto by coin name, and the stock venue's as "xyz:TICKER".
+export async function getLiveMids(): Promise<Record<string, number>> {
+  const venues = await Promise.all([hyperliquidInfo({ type: 'allMids' }), hyperliquidInfo({ type: 'allMids', dex: STOCK_DEX })])
+  const mids: Record<string, number> = {}
+  for (const venue of venues) {
+    for (const [coin, mid] of Object.entries(venue ?? {})) {
+      const price = Number(mid)
+      if (Number.isFinite(price) && price > 0) mids[coin] = price
+    }
+  }
+  return mids
+}
+
+// The Hyperliquid coin that quotes an asset live, with its price. Null where Hyperliquid does not quote the asset,
+// which leaves the caller on the last exchange close.
+export function liveQuote(
+  source: { asset_class: 'crypto' | 'stock'; source_id: string },
+  mids: Record<string, number>,
+  lastClose?: number,
+): { coin: string; price: number } | null {
+  const symbol = cleanSymbol(source.source_id)
+  const stockCoin = `${STOCK_DEX}:${symbol}`
+  if (source.asset_class === 'crypto') {
+    const coin = mids[symbol] ? symbol : stockCoin
+    return mids[coin] ? { coin, price: mids[coin] } : null
+  }
+  const price = mids[stockCoin]
+  if (!price || !lastClose || Math.abs(price / lastClose - 1) > MAX_STOCK_GAP) return null
+  return { coin: stockCoin, price }
+}
+
 // Daily candles only, for a chart. Scoring uses getPriceSeries, which also pulls hourly bars.
 export async function getDailyBars(asset: ResolvedAsset, from: string): Promise<Bar[]> {
   return asset.provider === 'hyperliquid' || asset.assetClass === 'crypto'

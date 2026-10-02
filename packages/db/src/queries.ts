@@ -441,6 +441,54 @@ export async function getLeaderboard({ horizon = 30, limit = 100, offset = 0 }: 
   return rows.map(serializeRow)
 }
 
+// The calls posted in the past few days, newest first. Each carries what its account had already posted on that asset
+// before it and how those earlier calls did N days later. `sources` is the instrument each asset is priced against.
+export async function getFeed({ horizon = 30, days = 7 }: { horizon?: HorizonDays; days?: number } = {}) {
+  const h = HORIZON_DAYS.includes(horizon) ? horizon : 30
+  const calls = (await query(
+    `SELECT c.tweet_id, c.handle, c.asset, c.direction, c.created_at, c.entry_price, c.return_pct, t.text, t.url,
+      e.prior, e.prior_same, e.wins, e.losses, e.avg_return
+     FROM callouts c
+     JOIN tweets t ON t.tweet_id = c.tweet_id
+     CROSS JOIN LATERAL (
+      SELECT COUNT(*)::int AS prior,
+        COUNT(*) FILTER (WHERE earlier.direction = c.direction)::int AS prior_same,
+        COUNT(*) FILTER (WHERE earlier.return_${h}d > 0)::int AS wins,
+        COUNT(*) FILTER (WHERE earlier.return_${h}d <= 0)::int AS losses,
+        AVG(earlier.return_${h}d) AS avg_return
+      FROM callouts earlier
+      WHERE earlier.handle = c.handle AND earlier.asset = c.asset AND earlier.created_at < c.created_at
+     ) e
+     WHERE c.created_at > now() - ($1::int * interval '1 day')
+     ORDER BY c.created_at DESC, c.asset ASC`,
+    [days],
+  )).rows.map(serializeRow)
+  const accounts = (await query(
+    `SELECT handle, name, avatar_url FROM users WHERE handle = ANY($1::text[])`,
+    [[...new Set(calls.map((call: any) => call.handle))]],
+  )).rows.map(serializeRow)
+  const sources = (await query(
+    `SELECT DISTINCT ON (asset) asset, asset_class, source_id FROM calls
+     WHERE asset = ANY($1::text[]) ORDER BY asset, priced_at DESC`,
+    [[...new Set(calls.map((call: any) => call.asset))]],
+  )).rows.map(serializeRow)
+  return { calls, accounts, sources }
+}
+
+// The stored summary of each asset, with the key of the posts it was written from.
+export async function getFeedSummaries(assets: string[]) {
+  const { rows } = await query(`SELECT asset, posts_key, summary FROM feed_summaries WHERE asset = ANY($1::text[])`, [assets])
+  return rows.map(serializeRow)
+}
+
+export async function saveFeedSummary({ asset, postsKey, summary }: { asset: string; postsKey: string; summary: string }) {
+  await query(
+    `INSERT INTO feed_summaries (asset, posts_key, summary) VALUES ($1,$2,$3)
+     ON CONFLICT(asset) DO UPDATE SET posts_key = excluded.posts_key, summary = excluded.summary, created_at = now()`,
+    [asset, postsKey, summary],
+  )
+}
+
 export async function getUserScorecard(handle: string, options: { includeTweets?: boolean } = {}) {
   const includeTweets = options.includeTweets ?? true
   const { rows } = await query(

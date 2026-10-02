@@ -21,6 +21,9 @@
   /* Saturated, for small marks that must read as a win or a loss at a glance. */
   --won: #12a150;
   --lost: #e5484d;
+  /* Accounts that disagree on an asset. */
+  --warn: #6b4e00;
+  --warn-soft: #fff3c9;
 
   --font-ui: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1360,6 +1363,280 @@ em.move {
   color: var(--bad);
 }
 
+/* Feed: one row per asset the tracked accounts called this week */
+.feed-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3) var(--s-5);
+}
+
+.feed-idea {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 132px 92px;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  padding: var(--s-4);
+  border-bottom: var(--border-soft);
+}
+
+.feed-idea:last-child {
+  border-bottom: 0;
+}
+
+.feed-rank {
+  color: var(--mid);
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+}
+
+.feed-idea-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-3);
+}
+
+.feed-ticker {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.stance-badge.split {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.feed-spark {
+  display: block;
+  width: 132px;
+  height: 34px;
+}
+
+.feed-spark polyline {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.feed-spark .before {
+  stroke: var(--line);
+}
+
+.feed-spark .up {
+  stroke: var(--won);
+}
+
+.feed-spark .down {
+  stroke: var(--lost);
+}
+
+.feed-spark circle {
+  fill: var(--ink);
+}
+
+.feed-since {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  line-height: 1.2;
+  text-align: right;
+}
+
+.feed-since small {
+  display: block;
+  color: var(--mid);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The current price. A new price washes it green or red for a moment, then it settles back to ink. */
+.feed-price {
+  display: inline-block;
+  margin: 3px -4px 0 0;
+  border-radius: 2px;
+  padding: 0 4px;
+  font-size: var(--t-sm);
+}
+
+.feed-price.up {
+  animation: feed-price-up 900ms ease-out;
+}
+
+.feed-price.down {
+  animation: feed-price-down 900ms ease-out;
+}
+
+@keyframes feed-price-up {
+  from {
+    background: var(--won);
+    color: var(--win);
+  }
+}
+
+@keyframes feed-price-down {
+  from {
+    background: var(--lost);
+    color: var(--win);
+  }
+}
+
+/* Everything under the ticker lines up with it, clear of the rank. */
+.feed-quote,
+.feed-callers,
+.feed-posts {
+  grid-column: 2 / -1;
+  margin: 0;
+}
+
+.feed-quote {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.feed-quote b,
+.feed-post p b {
+  color: var(--acc);
+  font-weight: 500;
+}
+
+.feed-quote cite {
+  margin-left: var(--s-2);
+  color: var(--mid);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  font-style: normal;
+}
+
+.feed-callers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--s-2);
+}
+
+.feed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: var(--border-soft);
+  border-radius: var(--r-ctl);
+  padding: 2px var(--s-2) 2px 2px;
+  background: var(--win);
+  color: var(--edge);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+}
+
+.feed-chip:hover {
+  background: var(--soft);
+}
+
+.feed-chip .avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 10.5px;
+}
+
+.feed-chip b {
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.feed-chip i {
+  color: var(--won);
+  font-size: 9px;
+  font-style: normal;
+}
+
+.feed-chip.bear i {
+  color: var(--lost);
+}
+
+.feed-posts summary {
+  width: fit-content;
+  color: var(--mid);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  cursor: pointer;
+}
+
+.feed-posts summary:hover {
+  color: var(--ink);
+}
+
+.feed-posts[open] summary {
+  margin-bottom: var(--s-2);
+}
+
+.feed-post {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 52px auto;
+  align-items: baseline;
+  gap: var(--s-3);
+  border: var(--border-soft);
+  border-bottom: 0;
+  padding: var(--s-2) var(--s-3);
+  background: var(--win);
+  font-size: var(--t-sm);
+}
+
+.feed-post:last-child {
+  border-bottom: var(--border-soft);
+}
+
+.feed-post > b {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-post p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-post .move,
+.feed-post a {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.feed-post a {
+  color: var(--mid);
+}
+
+.feed-post a:hover {
+  color: var(--ink);
+}
+
+.feed-flag {
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctl);
+  padding: 0 5px;
+  background: var(--soft);
+  color: var(--mid);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  line-height: 1.6;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 @media (max-width: 860px) {
   .home-header {
     grid-template-columns: 1fr;
@@ -1411,6 +1688,49 @@ em.move {
 
   .home-hero-copy h1 {
     font-size: 26px;
+  }
+
+  /* The price line gives way to the text; each post stacks its name over its words. */
+  .feed-idea {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    gap: var(--s-2) var(--s-3);
+    padding: var(--s-4) var(--s-3);
+  }
+
+  .feed-spark {
+    display: none;
+  }
+
+  .feed-rank {
+    align-self: start;
+    padding-top: 5px;
+  }
+
+  /* Four ranking choices do not fit a phone: the control scrolls sideways inside the window. */
+  .feed-controls,
+  .feed-controls .hold-control {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .feed-controls .sorts {
+    overflow-x: auto;
+  }
+
+  .feed-post {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px var(--s-3);
+  }
+
+  .feed-post p {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    white-space: normal;
+  }
+
+  .feed-post a {
+    grid-column: 1 / -1;
+    text-align: left;
   }
 
   .home-board-head {

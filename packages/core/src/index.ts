@@ -5,4 +5,5 @@ export * from './classify'
 export * from './assets'
 export * from './pricing'
 export * from './scoring'
+export * from './summarize'
 

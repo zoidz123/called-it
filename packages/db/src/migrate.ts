@@ -148,6 +148,13 @@ const statements = [
   )`,
   `ALTER TABLE callouts ADD COLUMN IF NOT EXISTS entry_at TIMESTAMPTZ`,
   `CREATE INDEX IF NOT EXISTS idx_callouts_handle_asset ON callouts(handle, asset, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_callouts_created ON callouts(created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS feed_summaries (
+    asset TEXT PRIMARY KEY,
+    posts_key TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
   `CREATE TABLE IF NOT EXISTS asset_feedback (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     handle TEXT NOT NULL REFERENCES users(handle) ON DELETE CASCADE,
