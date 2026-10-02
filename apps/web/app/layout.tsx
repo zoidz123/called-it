@@ -52,7 +52,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <header className="taskbar">
           <a className="brand" href="/">Called It<span>.</span></a>
-          <a className="taskbar-item" href="/">Leaderboard</a>
+          <a className="taskbar-item" href="/">Home</a>
           <a className="taskbar-item" href="/feed">Feed</a>
         </header>
         {children}

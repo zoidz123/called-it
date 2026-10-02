@@ -66,6 +66,11 @@ export function ScanBox({
         if (!res.ok) throw new Error(payload?.error || 'Could not start scan.')
         return payload
       })
+      // The account was scored while this one was being asked for: there is nothing to wait on.
+      if (created.cached) {
+        window.location.href = `/u/${created.handle ?? clean}`
+        return
+      }
       await poll(created.jobId)
     } catch (error) {
       setInlineError(error instanceof Error ? error.message : 'Scan failed.')

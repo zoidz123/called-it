@@ -3,26 +3,32 @@ import cors from '@fastify/cors'
 import { createHash } from 'node:crypto'
 import { migrate } from '@called-it/db/migrate'
 import {
+  countVisitorScans,
   createAssetFeedback,
   createOrReuseScanJob,
   getAssetThread,
   getFeed,
   getFeedSummaries,
-  listInstruments,
   getLeaderboard,
   getScanJob,
   getUserScorecard,
+  hasScorecard,
+  listInstruments,
   maybeEnqueueStaleRefreshes,
   saveFeedSummary,
 } from '@called-it/db'
 import { dayKey, directionalReturn, getDailyBars, getLiveMids, getXUser, liveQuote, loadLocalEnv, mapWithConcurrency, parseXHandle, summariesAreConfigured, summarizeIdea, type Bar, type SummaryPost } from '@called-it/core'
 import { startPollLoop } from './poller'
 import { describeRegistry, startWorkerLoop } from './worker'
-import { corsOrigin, scanIsConfigured } from './config'
+import { corsOrigin, scanIsConfigured, visitorAddress } from './config'
 
 loadLocalEnv()
 
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001)
+// New scans one visitor, and every visitor together, may start in a day. Each scan costs provider credits, and
+// every scanned account is then read for new posts from then on.
+const SCAN_MAX_PER_VISITOR = clampNumber(process.env.SCAN_MAX_PER_VISITOR, 3, 1, 1000)
+const SCAN_MAX_PER_DAY = clampNumber(process.env.SCAN_MAX_PER_DAY, 100, 1, 100_000)
 const FEEDBACK_MAX_PER_HOUR = clampNumber(process.env.FEEDBACK_MAX_PER_HOUR, 20, 1, 100)
 const FEEDBACK_RATE_WINDOW_MS = 60 * 60 * 1000
 const FEEDBACK_DUPLICATE_WINDOW_MS = 10 * 60 * 1000
@@ -177,7 +183,17 @@ export async function buildServer() {
   app.post('/api/scan/:handle', async (request: any, reply) => {
     if (!scanIsConfigured()) return reply.code(503).send({ error: 'Scanning is not configured.' })
     const handle = parseXHandle(request.params.handle)
-    const job = await createOrReuseScanJob({ handle })
+    // An account that is already scored is kept up to date by the worker; asking again does not rescan it.
+    if (await hasScorecard(handle)) return { handle, cached: true }
+    const visitor = visitorKey(request)
+    const scans = await countVisitorScans(visitor)
+    if (scans.mine >= SCAN_MAX_PER_VISITOR) {
+      return reply.code(429).send({ error: `You have used your ${SCAN_MAX_PER_VISITOR} scans for today. Try again tomorrow.` })
+    }
+    if (scans.everyone >= SCAN_MAX_PER_DAY) {
+      return reply.code(429).send({ error: 'The site has reached its limit on new scans for today. Try again tomorrow.' })
+    }
+    const job = await createOrReuseScanJob({ handle, requestedBy: visitor })
     return { jobId: job.id, handle, status: job.status }
   })
 
@@ -263,10 +279,13 @@ function checkFeedbackGate(request: any, handle: string, asset: string, suggeste
 }
 
 function readClientIp(request: any) {
-  const forwarded = request.headers['x-forwarded-for']
-  if (typeof forwarded === 'string' && forwarded.trim()) return forwarded.split(',')[0].trim()
-  if (Array.isArray(forwarded) && forwarded[0]) return String(forwarded[0]).split(',')[0].trim()
-  return request.ip ?? request.socket?.remoteAddress ?? 'unknown'
+  return visitorAddress(request.headers['x-forwarded-for'], request.ip ?? request.socket?.remoteAddress)
+}
+
+// A visitor, for counting their scans. The address is hashed with a secret, so what is stored cannot be turned back
+// into an address.
+function visitorKey(request: any) {
+  return hashValue(`${readClientIp(request)}|${process.env.DATABASE_URL ?? ''}`).slice(0, 32)
 }
 
 function hashValue(value: string) {

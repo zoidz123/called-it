@@ -15,6 +15,7 @@ import {
   hasRecentRefreshJob,
   markScanned,
   persistScorecard,
+  queueStaleRescores,
   recordInstruments,
 } from '@called-it/db'
 import { scoringState } from './worker'
@@ -26,6 +27,9 @@ const OVERLAP_MS = 5 * 60 * 1000
 // that whole gap for every account.
 const MAX_GAP_MS = 6 * 60 * 60 * 1000
 const SEEN_TTL_MS = 60 * 60 * 1000
+// Every account is rescored at least this often, a few each read so they do not all price at once.
+const RESCORE_AFTER_HOURS = 24
+const RESCORES_PER_READ = 10
 
 type Tracked = { user: XUser; lastScannedAt: string }
 
@@ -39,6 +43,9 @@ export function startPollLoop({ minutes = POLL_MINUTES } = {}) {
   let timer: ReturnType<typeof setTimeout> | undefined
   const tick = async () => {
     try {
+      // Rescoring needs no provider credits, so it runs even when reading new posts fails.
+      const rescoring = await queueStaleRescores({ afterHours: RESCORE_AFTER_HOURS, limit: RESCORES_PER_READ })
+      if (rescoring.length) console.log(`[feed-poll] rescoring=${rescoring.length}`)
       await pollOnce()
     } catch (error) {
       console.error('feed poll failed', error)

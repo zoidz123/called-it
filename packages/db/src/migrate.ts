@@ -177,6 +177,8 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS idx_call_tweets_handle_asset ON call_tweets(handle, asset)`,
   `CREATE INDEX IF NOT EXISTS idx_asset_feedback_created ON asset_feedback(created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_asset_feedback_handle_asset ON asset_feedback(lower(handle), asset)`,
+  // Who asked for a scan, as a hash of their address, so each visitor's scans in a day can be counted.
+  `ALTER TABLE scan_jobs ADD COLUMN IF NOT EXISTS requested_by TEXT`,
   // The registry: every instrument a ticker has been priced against, with what it is. One ticker can have several.
   `CREATE TABLE IF NOT EXISTS instruments (
     ticker TEXT NOT NULL,

@@ -5,22 +5,64 @@ const PRICE_REFRESH_TTL_HOURS = Number(process.env.PRICE_REFRESH_TTL_HOURS ?? 1)
 const FULL_RESCAN_TTL_HOURS = Number(process.env.FULL_RESCAN_TTL_HOURS ?? 24 * 7)
 const REFRESH_JOB_COOLDOWN_MINUTES = Number(process.env.REFRESH_JOB_COOLDOWN_MINUTES ?? 60)
 
-export async function createOrReuseScanJob({ handle }: { handle: string }) {
+// `requestedBy` marks a scan a visitor asked for; scans the system queues for itself leave it out.
+export async function createOrReuseScanJob({ handle, requestedBy }: { handle: string; requestedBy?: string }) {
   const normalized = handle.toLowerCase()
   const existing = await findActiveScanJob(normalized, 'full_scan')
   if (existing) return existing
   try {
     const { rows } = await query(
-      `INSERT INTO scan_jobs (handle, job_type, status, stage, progress, progress_message)
-       VALUES ($1, 'full_scan', 'pending', 'queued', 5, 'Queued scan')
+      `INSERT INTO scan_jobs (handle, job_type, status, stage, progress, progress_message, requested_by)
+       VALUES ($1, 'full_scan', 'pending', 'queued', 5, 'Queued scan', $2)
        RETURNING *`,
-      [normalized],
+      [normalized, requestedBy ?? null],
     )
     return serializeRow(rows[0])
   } catch (error: any) {
     if (error?.code !== '23505') throw error
     return findActiveScanJob(normalized, 'full_scan')
   }
+}
+
+// Scans visitors started in the past day that did not fail: by this visitor, and by everyone.
+export async function countVisitorScans(requestedBy: string) {
+  const { rows } = await query(
+    `SELECT COUNT(*) FILTER (WHERE requested_by = $1)::int AS mine, COUNT(*)::int AS everyone
+     FROM scan_jobs
+     WHERE requested_by IS NOT NULL AND job_type = 'full_scan' AND status <> 'error'
+       AND created_at > now() - interval '24 hours'`,
+    [requestedBy],
+  )
+  return { mine: Number(rows[0].mine), everyone: Number(rows[0].everyone) }
+}
+
+export async function hasScorecard(handle: string) {
+  const { rows } = await query(`SELECT 1 FROM users WHERE lower(handle) = lower($1) AND last_scanned_at IS NOT NULL`, [handle])
+  return Boolean(rows[0])
+}
+
+// Queues a rescore for the accounts whose results were last worked out longest ago, a few at a time. An account that
+// posts nothing new is otherwise never rescored, so its calls would reach their 7, 30 and 90 day marks unrecorded.
+export async function queueStaleRescores({ afterHours, limit }: { afterHours: number; limit: number }) {
+  const { rows } = await query(
+    `INSERT INTO scan_jobs (handle, job_type, status, stage, progress, progress_message)
+     SELECT s.handle, 'price_refresh', 'pending', 'queued', 5, 'Queued price refresh'
+     FROM user_stats s
+     WHERE s.computed_at < now() - ($1::int * interval '1 hour')
+       AND EXISTS (SELECT 1 FROM calls WHERE calls.handle = s.handle)
+       -- One that was tried lately is skipped, so an account whose rescore keeps failing does not hold up the rest.
+       AND NOT EXISTS (
+        SELECT 1 FROM scan_jobs j
+        WHERE lower(j.handle) = lower(s.handle) AND j.job_type = 'price_refresh'
+          AND j.created_at > now() - ($3::int * interval '1 minute')
+       )
+     ORDER BY s.computed_at
+     LIMIT $2
+     ON CONFLICT DO NOTHING
+     RETURNING handle`,
+    [afterHours, limit, REFRESH_JOB_COOLDOWN_MINUTES],
+  )
+  return rows.map((row: any) => row.handle as string)
 }
 
 export async function createOrReusePriceRefreshJob({ handle }: { handle: string }) {

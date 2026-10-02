@@ -11,6 +11,13 @@ export function scanIsConfigured(env: Readonly<Record<string, string | undefined
     && TWITTER_KEY_NAMES.some((name) => Boolean(env[name]?.trim()))
 }
 
+// The address a request came from. The host's proxy appends the address it saw to X-Forwarded-For, so the last
+// entry is the visitor's; anything before it was sent by the visitor and cannot be trusted.
+export function visitorAddress(forwardedFor: string | string[] | undefined, fallback: string | undefined) {
+  const forwarded = (Array.isArray(forwardedFor) ? forwardedFor.join(',') : forwardedFor ?? '').split(',').map((entry) => entry.trim()).filter(Boolean)
+  return forwarded.at(-1) ?? fallback ?? 'unknown'
+}
+
 export function corsOrigin(env: Readonly<Record<string, string | undefined>> = process.env): true | string[] {
   const configured = env.CORS_ORIGIN?.trim()
   if (configured) return configured.split(',').map((origin) => origin.trim()).filter(Boolean)

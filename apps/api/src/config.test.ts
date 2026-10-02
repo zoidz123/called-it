@@ -1,5 +1,18 @@
 import { describe, expect, test } from 'bun:test'
-import { corsOrigin, scanIsConfigured } from './config'
+import { corsOrigin, scanIsConfigured, visitorAddress } from './config'
+
+describe('visitorAddress', () => {
+  test('takes the address the proxy appended, not one the visitor sent', () => {
+    expect(visitorAddress('1.2.3.4, 203.0.113.9', '10.0.0.1')).toBe('203.0.113.9')
+    expect(visitorAddress('203.0.113.9', '10.0.0.1')).toBe('203.0.113.9')
+    expect(visitorAddress(['1.2.3.4', '203.0.113.9'], undefined)).toBe('203.0.113.9')
+  })
+
+  test('falls back to the connection when no proxy is in front', () => {
+    expect(visitorAddress(undefined, '127.0.0.1')).toBe('127.0.0.1')
+    expect(visitorAddress('', undefined)).toBe('unknown')
+  })
+})
 
 describe('API configuration', () => {
   test('fails closed when a production CORS allowlist is missing', () => {

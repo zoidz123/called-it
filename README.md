@@ -17,6 +17,8 @@ The first scan of an account reads the past 365 days.
 Later scans read only posts since the last scan, classify only those, and keep everything already stored.
 Every 15 minutes the API also reads the new posts of every scanned account in one shared search, so the cost is the posts returned and not a request per account.
 An account that has not been read for six hours is caught up by an ordinary scan instead.
+Every account is also rescored at least once a day, so a call reaches its 7, 30 and 90 day results on time even when the account posts nothing new.
+A visitor can start three new scans a day, counted by a hash of their address, and the site as a whole one hundred; scanning an account that is already scored opens its scorecard instead.
 Every post that makes a call is its own call.
 It is priced from the first price after the post, using hourly bars where the venue still serves them, to the last price 7, 30 and 90 days later.
 A bearish call is scored as a short, so it gains when the price falls.
@@ -82,7 +84,7 @@ Never commit a populated environment file, Neon link file, provider credential, 
 | `CORS_ORIGIN` | Production API | Comma-separated browser origins allowed to call the API. |
 
 The scanner also accepts one key through `TWITTERAPI_IO_API_KEY`, `TWITTERAPI_IO_FALLBACK_API_KEY`, or the legacy `TWITTERAPI_IO_API_KEY_4` alias.
-Common optional controls include `API_PORT`, `WEB_PORT`, `SCAN_WORKER_ENABLED`, `FEED_POLL_MINUTES`, `TWITTER_LOOKBACK_DAYS`, `TWITTER_WINDOW_DAYS`, `TWITTER_MAX_PAGES_PER_WINDOW`, `TWITTERAPI_IO_FETCH_CONCURRENCY`, `TYPESAFE_MODEL`, and `PRICING_CONCURRENCY`.
+Common optional controls include `API_PORT`, `WEB_PORT`, `SCAN_WORKER_ENABLED`, `FEED_POLL_MINUTES`, `SCAN_MAX_PER_VISITOR`, `SCAN_MAX_PER_DAY`, `TWITTER_LOOKBACK_DAYS`, `TWITTER_WINDOW_DAYS`, `TWITTER_MAX_PAGES_PER_WINDOW`, `TWITTERAPI_IO_FETCH_CONCURRENCY`, `TYPESAFE_MODEL`, and `PRICING_CONCURRENCY`.
 See the provider adapters for the remaining tuning controls.
 
 Missing database or worker credentials fail before the corresponding process starts.
