@@ -168,6 +168,32 @@ npm pack --dry-run --json --ignore-scripts ./packages/agent
 
 See [`docs/releases/agent.md`](docs/releases/agent.md) for the fail-closed maintainer release sequence.
 
+## Deploying
+
+Pushing to `main` on GitHub deploys both halves.
+Railway builds the API (service `called-it-api` in the `called-it` project) and Vercel builds the web app (project `called-it`), each from the pushed commit.
+Nothing else needs to be run.
+
+The API must stay a single instance.
+The 15-minute read of new posts has no lock across instances, so a second replica would read, and pay for, the same posts.
+
+Railway needs `DATABASE_URL`, `TYPESAFE_API_KEY`, `TWITTERAPI_IO_API_KEYS`, `CORS_ORIGIN` and, for feed summaries, `ANTHROPIC_API_KEY`.
+`CORS_ORIGIN` lists every address the site is served from, separated by commas.
+Vercel needs `NEXT_PUBLIC_API_URL`, the Railway address of the API, and `NEXT_PUBLIC_SITE_URL`, the site's own address.
+Both are read at build time, so changing either one needs a new web deploy.
+
+To check a deploy:
+
+```bash
+railway deployment list                 # the newest should read SUCCESS
+railway logs                            # "[feed-poll]" lines show the reads of new posts
+curl https://called-it-api-production.up.railway.app/health
+npx vercel ls called-it                 # the newest production deployment should be Ready
+```
+
+A deploy that fails its health check leaves the previous one serving.
+The API runs the database migration on every start, and the migration only adds what is missing.
+
 ## Architecture and data sources
 
 | Path | Responsibility |
