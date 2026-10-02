@@ -42,6 +42,8 @@ export type ClassifiedTweet = TweetCandidate & {
 
 export type AssetClass = 'crypto' | 'stock'
 
+export type InstrumentKind = 'stock' | 'etf' | 'perp' | 'token'
+
 export type ResolvedAsset = {
   symbol: string
   assetClass: AssetClass
@@ -49,7 +51,12 @@ export type ResolvedAsset = {
   name: string | null
   // An on-chain token is priced from its GeckoTerminal pool; its sourceId is "gt:network:pool:token".
   provider?: 'yahoo' | 'hyperliquid' | 'geckoterminal'
-  resolvedBy?: 'common' | 'rule' | 'llm'
+  // What the instrument is, and the exchange or chain it trades on.
+  kind?: InstrumentKind
+  venue?: string | null
+  // How the ticker was settled: a built-in common asset, a single-venue rule, the account's posts, the ticker's
+  // default meaning, or a correction pinned by hand.
+  resolvedBy?: 'common' | 'rule' | 'llm' | 'default' | 'pin'
   confidence?: number
 }
 

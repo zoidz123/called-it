@@ -1,4 +1,4 @@
-import { resolveAssets, type AssetContext } from '../assets'
+import { resolveAssets, type AssetContext, type TickerRegistry } from '../assets'
 import { getPriceSeries, pricesAt, type PriceSeries } from '../pricing'
 import type { ClassifiedTweet, Direction, HorizonStats, ResolvedAsset, ScoredCall, ScoredCallout, UserStats } from '../types'
 
@@ -14,20 +14,26 @@ export async function scoreCalls(
     resolved?: Map<string, ResolvedAsset>
     resolveMissing?: boolean
     settled?: Map<string, SettledCallout>
+    // What the registry already knows about tickers, looked up only for the ones that need resolving.
+    registryFor?: (assets: string[]) => Promise<TickerRegistry>
   } = {},
-): Promise<{ calls: ScoredCall[]; stats: UserStats }> {
+  // `instruments` are the ones resolved on this run, for the caller to record.
+): Promise<{ calls: ScoredCall[]; stats: UserStats; instruments: ResolvedAsset[] }> {
   const maxAssets = Number(process.env.SCORING_MAX_ASSETS ?? 0)
   const assetsAll = [...new Set(classifiedTweets.flatMap((tweet) => tweet.stances.map((stance) => stance.asset)))]
   const assets = maxAssets > 0 ? assetsAll.slice(0, maxAssets) : assetsAll
   const resolved = new Map(options.resolved)
+  const instruments: ResolvedAsset[] = []
   if (!options.resolved || options.resolveMissing) {
     const missing = assets.filter((asset) => !resolved.has(asset))
     const known = [...resolved.values()]
     const found = await resolveAssets(missing, buildAssetContexts(classifiedTweets, missing), {
       allowLlm: options.allowLlmAssetResolution,
+      registry: missing.length ? await options.registryFor?.(missing) : undefined,
       cryptoShare: known.length ? known.filter((instrument) => instrument.assetClass === 'crypto').length / known.length : undefined,
     })
     for (const [asset, instrument] of found) resolved.set(asset, instrument)
+    instruments.push(...found.values())
   }
   const callGroups = await mapWithConcurrency(assets, Number(process.env.PRICING_CONCURRENCY ?? 6), async (asset) => {
     return scoreAssetCalls(handle, asset, classifiedTweets, resolved, options.settled)
@@ -35,7 +41,7 @@ export async function scoreCalls(
   const calls = callGroups.flat()
 
   calls.sort((a, b) => b.returnPct - a.returnPct)
-  return { calls, stats: computeStats(handle, calls) }
+  return { calls, stats: computeStats(handle, calls), instruments }
 }
 
 async function scoreAssetCalls(

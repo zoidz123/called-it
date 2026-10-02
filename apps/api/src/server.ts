@@ -8,6 +8,7 @@ import {
   getAssetThread,
   getFeed,
   getFeedSummaries,
+  listInstruments,
   getLeaderboard,
   getScanJob,
   getUserScorecard,
@@ -16,7 +17,7 @@ import {
 } from '@called-it/db'
 import { dayKey, directionalReturn, getDailyBars, getLiveMids, getXUser, liveQuote, loadLocalEnv, mapWithConcurrency, parseXHandle, summariesAreConfigured, summarizeIdea, type Bar, type SummaryPost } from '@called-it/core'
 import { startPollLoop } from './poller'
-import { startWorkerLoop } from './worker'
+import { describeRegistry, startWorkerLoop } from './worker'
 import { corsOrigin, scanIsConfigured } from './config'
 
 loadLocalEnv()
@@ -88,6 +89,13 @@ export async function buildServer() {
       live[call.idea] ? { ...call, return_pct: directionalReturn(call.direction, call.entry_price, live[call.idea].price) } : call
     ))
     return { horizon, calls, accounts, prices, live, summaries: await feedSummaries(calls, accounts) }
+  })
+
+  // Every instrument a ticker is priced against across accounts, and which one is its default.
+  app.get('/api/instruments', async (request: any, reply) => {
+    const ticker = normalizeAsset(request.query?.ticker)
+    if (!ticker) return reply.code(400).send({ error: 'A ticker is required.' })
+    return { ticker, instruments: await listInstruments(ticker) }
   })
 
   app.get('/api/users/:handle', async (request: any, reply) => {
@@ -361,6 +369,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const worker = process.env.SCAN_WORKER_ENABLED === 'false' ? null : startWorkerLoop()
   // New posts are read by the same process that scans, so an API without a worker does not read them either.
   const poller = worker ? startPollLoop() : null
+  if (worker) describeRegistry().catch((error) => console.error('describing the registry failed', error))
   try {
     await app.listen({ port: PORT, host: '0.0.0.0' })
     console.log(`Called It API listening on http://localhost:${PORT}`)

@@ -1,4 +1,4 @@
-import { HORIZON_DAYS, type ClassifiedTweet, type HorizonDays, type ScoredCall, type XUser } from '@called-it/core/types'
+import { HORIZON_DAYS, type ClassifiedTweet, type HorizonDays, type ResolvedAsset, type ScoredCall, type XUser } from '@called-it/core/types'
 import { query, serializeRow, withTransaction } from './client'
 
 const PRICE_REFRESH_TTL_HOURS = Number(process.env.PRICE_REFRESH_TTL_HOURS ?? 1)
@@ -330,6 +330,124 @@ export async function getStoredAssetSources(handle: string) {
     [handle],
   )
   return rows.map(serializeRow)
+}
+
+// A ticker needs this many accounts on one instrument, and more than on any other, for that to be its default.
+const DEFAULT_MIN_ACCOUNTS = 2
+const DEFAULT_WINDOW_DAYS = 180
+
+function toInstrument(row: any): ResolvedAsset {
+  const onchain = String(row.source_id).startsWith('gt:')
+  return {
+    symbol: row.ticker,
+    assetClass: row.asset_class,
+    sourceId: row.source_id,
+    name: row.name ?? null,
+    kind: row.kind ?? undefined,
+    venue: row.venue ?? null,
+    provider: onchain ? 'geckoterminal' : row.asset_class === 'crypto' ? 'hyperliquid' : 'yahoo',
+  }
+}
+
+// Records instruments in the registry, filling in what each one is where that is now known.
+export async function recordInstruments(instruments: ResolvedAsset[]) {
+  for (const instrument of instruments) {
+    await query(
+      `INSERT INTO instruments (ticker, asset_class, source_id, kind, name, venue)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (ticker, asset_class, source_id) DO UPDATE SET
+        kind = COALESCE(excluded.kind, instruments.kind), name = COALESCE(excluded.name, instruments.name),
+        venue = COALESCE(excluded.venue, instruments.venue), updated_at = now()`,
+      [instrument.symbol, instrument.assetClass, instrument.sourceId, instrument.kind ?? null, instrument.name ?? null, instrument.venue ?? null],
+    )
+  }
+}
+
+// Instruments in the registry that have not been described yet.
+export async function getUndescribedInstruments() {
+  const { rows } = await query(`SELECT ticker, asset_class, source_id FROM instruments WHERE kind IS NULL ORDER BY ticker`)
+  return rows.map(toInstrument)
+}
+
+// How many accounts' recent calls on each ticker are priced against each instrument, with what the instrument is.
+async function instrumentUsage(tickers: string[]) {
+  const { rows } = await query(
+    `SELECT c.asset AS ticker, c.asset_class, c.source_id, i.kind, i.name, i.venue,
+      COUNT(DISTINCT c.handle)::int AS accounts, COUNT(*)::int AS calls
+     FROM calls c
+     LEFT JOIN instruments i ON i.ticker = c.asset AND i.asset_class = c.asset_class AND i.source_id = c.source_id
+     WHERE c.asset = ANY($1::text[]) AND c.first_pitch_at > now() - ($2::int * interval '1 day')
+     GROUP BY c.asset, c.asset_class, c.source_id, i.kind, i.name, i.venue
+     ORDER BY c.asset, accounts DESC, calls DESC`,
+    [tickers, DEFAULT_WINDOW_DAYS],
+  )
+  return rows.map(serializeRow)
+}
+
+// What the registry knows about each ticker, for resolving it for another account.
+// `defaults` is what the ticker means when an account's own posts do not settle it: the instrument pinned for
+// everyone, else the one most accounts are priced against, if it is clearly ahead.
+// `tokens` is the on-chain token the ticker is already priced as, so every account that means the token gets the
+// same one.
+export async function getTickerRegistry(tickers: string[]) {
+  const defaults = new Map<string, ResolvedAsset>()
+  const tokens = new Map<string, ResolvedAsset>()
+  if (!tickers.length) return { defaults, tokens }
+  const usage = await instrumentUsage(tickers)
+  for (const ticker of tickers) {
+    const rows = usage.filter((row: any) => row.ticker === ticker)
+    const [first, second] = rows
+    if (first && first.accounts >= DEFAULT_MIN_ACCOUNTS && first.accounts > (second?.accounts ?? 0)) defaults.set(ticker, toInstrument(first))
+    const token = rows.find((row: any) => String(row.source_id).startsWith('gt:'))
+    if (token) tokens.set(ticker, toInstrument(token))
+  }
+  const pins = await query(
+    `SELECT p.ticker, p.asset_class, p.source_id, i.kind, i.name, i.venue
+     FROM instrument_pins p
+     LEFT JOIN instruments i ON i.ticker = p.ticker AND i.asset_class = p.asset_class AND i.source_id = p.source_id
+     WHERE p.handle = '' AND p.ticker = ANY($1::text[])`,
+    [tickers],
+  )
+  for (const row of pins.rows) defaults.set(row.ticker, toInstrument(row))
+  return { defaults, tokens }
+}
+
+// The instruments pinned by hand for one account, by ticker.
+export async function getAccountPins(handle: string): Promise<Map<string, ResolvedAsset>> {
+  const { rows } = await query(
+    `SELECT p.ticker, p.asset_class, p.source_id, i.kind, i.name, i.venue
+     FROM instrument_pins p
+     LEFT JOIN instruments i ON i.ticker = p.ticker AND i.asset_class = p.asset_class AND i.source_id = p.source_id
+     WHERE p.handle <> '' AND lower(p.handle) = lower($1)`,
+    [handle],
+  )
+  return new Map(rows.map((row: any) => [row.ticker, toInstrument(row)]))
+}
+
+// Removes an account's calls on these tickers, for when they were priced against an instrument it no longer means.
+export async function dropAssetCalls(handle: string, assets: string[]) {
+  await withTransaction(async (client) => {
+    await client.query(`DELETE FROM callouts WHERE lower(handle) = lower($1) AND asset = ANY($2::text[])`, [handle, assets])
+    await client.query(`DELETE FROM calls WHERE lower(handle) = lower($1) AND asset = ANY($2::text[])`, [handle, assets])
+  })
+}
+
+// Every instrument a ticker is priced against, most used first, with which one is its default.
+export async function listInstruments(ticker: string) {
+  const [usage, registry] = await Promise.all([instrumentUsage([ticker]), getTickerRegistry([ticker])])
+  const usual = registry.defaults.get(ticker)
+  return usage.map((row: any) => ({
+    id: `${row.asset_class}:${row.source_id}`,
+    ticker: row.ticker,
+    assetClass: row.asset_class,
+    sourceId: row.source_id,
+    kind: row.kind,
+    name: row.name,
+    venue: row.venue,
+    accounts: row.accounts,
+    calls: row.calls,
+    default: Boolean(usual && usual.assetClass === row.asset_class && usual.sourceId === row.source_id),
+  }))
 }
 
 export async function persistRescore(handle: string, calls: ScoredCall[]) {

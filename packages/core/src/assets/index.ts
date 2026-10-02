@@ -1,8 +1,8 @@
 import { optionalEnv } from '../env'
-import { onchainSource } from '../pricing'
+import { getLiveMids, onchainSource } from '../pricing'
 import { spacedQueue } from '../spaced'
 import { askJev } from '../typesafe'
-import type { AssetClass, ResolvedAsset } from '../types'
+import type { AssetClass, InstrumentKind, ResolvedAsset } from '../types'
 
 type Provider = NonNullable<ResolvedAsset['provider']>
 type ResolvedBy = NonNullable<ResolvedAsset['resolvedBy']>
@@ -29,6 +29,8 @@ type AssetCandidate = {
   address?: string
   liquidityUsd?: number
   volumeUsd?: number
+  // What it trades at now, where known. A price quoted in a post tells two instruments with one ticker apart.
+  priceUsd?: number
 }
 
 // An on-chain pool below either of these is too thin to be what a post means, or to price a call against.
@@ -114,7 +116,8 @@ export async function resolveAssets(
   symbols: string[],
   contexts: Map<string, AssetContext> = new Map(),
   // `cryptoShare` is the share of the account's already settled instruments that are crypto, where known.
-  options: { allowLlm?: boolean; cryptoShare?: number } = {},
+  // `registry` is what is already known about these tickers across accounts.
+  options: { allowLlm?: boolean; cryptoShare?: number; registry?: TickerRegistry } = {},
 ): Promise<Map<string, ResolvedAsset>> {
   const out = new Map<string, ResolvedAsset>()
   const unique = [...new Set(symbols.map((symbol) => cleanSymbol(symbol)).filter(Boolean))]
@@ -129,6 +132,8 @@ export async function resolveAssets(
         sourceId: common.sourceId ?? raw,
         name: common.name,
         provider: common.provider,
+        kind: common.assetClass === 'crypto' ? 'perp' : 'stock',
+        venue: common.assetClass === 'crypto' ? 'hyperliquid' : null,
         resolvedBy: 'common',
         confidence: 1,
       })
@@ -139,7 +144,7 @@ export async function resolveAssets(
 
   if (!unresolved.length) return out
 
-  const candidateEntries = await Promise.all(unresolved.map(async (raw) => [raw, await getCandidates(raw, contexts.get(`$${raw}`))] as const))
+  const candidateEntries = await Promise.all(unresolved.map(async (raw) => [raw, await getCandidates(raw, contexts.get(`$${raw}`), options.registry?.tokens.get(`$${raw}`))] as const))
   const ambiguous: { raw: string; candidates: AssetCandidate[]; context: AssetContext | undefined }[] = []
 
   for (const [raw, candidates] of candidateEntries) {
@@ -155,12 +160,11 @@ export async function resolveAssets(
   for (const [raw, candidate] of llmResolved) {
     out.set(`$${raw}`, toResolvedAsset(raw, candidate, 'llm'))
   }
-  // Where the posts did not settle it, an account that calls almost only stocks, or almost only crypto, means that
-  // kind. Anything else stays unpriced: no price is better than the wrong instrument's.
-  for (const { raw, candidates } of ambiguous) {
-    if (out.has(`$${raw}`)) continue
-    const usual = resolveByHabit(raw, candidates, options.cryptoShare)
-    if (usual) out.set(`$${raw}`, toResolvedAsset(raw, usual, 'rule'))
+  // Where the posts did not settle it, the ticker takes its default meaning across accounts. With no default it
+  // stays unpriced: no price is better than the wrong instrument's.
+  for (const { raw } of ambiguous) {
+    const usual = options.registry?.defaults.get(`$${raw}`)
+    if (usual && !out.has(`$${raw}`)) out.set(`$${raw}`, { ...usual, symbol: `$${raw}`, resolvedBy: 'default' })
   }
 
   return out
@@ -174,19 +178,37 @@ function equity(name: string, sourceId?: string) {
   return { assetClass: 'stock' as const, provider: 'yahoo' as const, name, sourceId }
 }
 
-async function getCandidates(raw: string, context?: AssetContext): Promise<AssetCandidate[]> {
+async function getCandidates(raw: string, context?: AssetContext, known?: ResolvedAsset): Promise<AssetCandidate[]> {
   const [yahoo, hyperliquid, pools] = await Promise.all([yahooSearch(raw), hyperliquidCandidate(raw), onchainSearch(raw)])
   // A token that is the listed company's stock in tokenized form is not a separate instrument: the exchange listing
   // stays the one that is priced.
   const listed = yahoo.find((candidate) => cleanSymbol(candidate.symbol) === raw)
-  const token = pickOnchain(listed ? pools.filter((pool) => !isTokenizedStock(listed.name, pool.name)) : pools, context?.tweets.map((tweet) => tweet.text) ?? [])
+  const picked = pickOnchain(listed ? pools.filter((pool) => !isTokenizedStock(listed.name, pool.name)) : pools, context?.tweets.map((tweet) => tweet.text) ?? [])
+  // Which pool trades most changes from day to day, and copies of a token share its symbol. Once a ticker's token is
+  // in the registry it stays that token for every account, unless a post quotes another contract.
+  const token = known && !picked?.pinned ? knownToken(raw, known, pools) : picked
   // A coin with a Hyperliquid perpetual is priced there; its on-chain pools are mostly bridged copies. Only a
   // contract address quoted in the posts puts a token ahead of it.
   const onchain = token && (token.pinned || !hyperliquid.length) ? [token] : []
-  return [...yahoo, ...hyperliquid, ...onchain].sort((a, b) => b.score - a.score)
+  // Hyperliquid lists a coin by symbol alone. Its most traded on-chain token carries the project's name, which is
+  // what a post will use ("Lighter" for LIT).
+  const named = hyperliquid.map((perp) => ({ ...perp, name: token?.name ?? perp.name }))
+  return [...yahoo, ...named, ...onchain].sort((a, b) => b.score - a.score)
 }
 
 type OnchainCandidate = AssetCandidate & { pinned?: boolean }
+
+// What the registry already holds for a batch of tickers: each one's default instrument across accounts, and the
+// on-chain token it has been priced as, if any.
+export type TickerRegistry = { defaults: Map<string, ResolvedAsset>; tokens: Map<string, ResolvedAsset> }
+
+function knownToken(raw: string, known: ResolvedAsset, pools: AssetCandidate[]): OnchainCandidate {
+  const pool = pools.find((candidate) => candidate.sourceId === known.sourceId)
+  if (pool) return pool
+  // The registry's pool is not among today's most traded. Another pool of the same contract still supplies its name.
+  const sibling = pools.find((candidate) => candidate.address && known.sourceId.toLowerCase().endsWith(`:${candidate.address.toLowerCase()}`))
+  return { provider: 'geckoterminal', symbol: raw, assetClass: 'crypto', sourceId: known.sourceId, name: known.name ?? sibling?.name ?? null, exchange: known.venue ?? sibling?.exchange, quoteType: 'TOKEN', score: 5_000_000, priceUsd: sibling?.priceUsd }
+}
 
 async function onchainSearch(raw: string): Promise<AssetCandidate[]> {
   const cached = onchainSearchCache.get(raw)
@@ -214,6 +236,7 @@ async function fetchOnchainSearch(raw: string): Promise<AssetCandidate[]> {
         quoteType: 'TOKEN',
         score: 5_000_000,
         address: String(pair.baseToken.address),
+        priceUsd: Number(pair.priceUsd) || undefined,
         liquidityUsd: Number(pair.liquidity?.usd) || 0,
         volumeUsd: Number(pair.volume?.h24) || 0,
       }))
@@ -325,9 +348,10 @@ async function resolveWithLlm(items: { raw: string; candidates: AssetCandidate[]
   const out = new Map<string, AssetCandidate>()
   if (!items.length || optionalEnv('ASSET_RESOLUTION_LLM_ENABLED') === '0') return out
 
+  const mids = await getLiveMids().catch((): Record<string, number> => ({}))
   await Promise.all(items.map(async (item) => {
     try {
-      const candidates = item.candidates.slice(0, 6)
+      const candidates = await withPrices(item.raw, item.candidates.slice(0, 6), mids)
       const answers = await askJev(
         {
           cashtag: `$${item.raw}`,
@@ -337,7 +361,7 @@ async function resolveWithLlm(items: { raw: string; candidates: AssetCandidate[]
         {
           instrument: {
             type: 'choice',
-            instructions: 'Which priced instrument does `cashtag` refer to in `tweets`? Match the company or project, sector, market and asset type the tweets describe. The other tickers in the same tweets are strong evidence: a ticker listed among stocks is the stock, and one listed among crypto tokens, memecoins or chain names is the token. Weigh what `account` usually calls only when the tweets leave it open.',
+            instructions: 'Which priced instrument does `cashtag` refer to in `tweets`? Match the company or project, sector, market and asset type the tweets describe. The other tickers in the same tweets are strong evidence: a ticker listed among stocks is the stock, and one listed among crypto tokens, memecoins or chain names is the token. A price or level the tweets quote for the cashtag should be near the instrument\'s `priceUsd`. Weigh what `account` usually calls only when the tweets leave it open.',
             criteria: {
               ...Object.fromEntries(candidates.map((candidate, index) => [String(index), describeCandidate(candidate)])),
               ambiguous: 'The tweets do not clearly identify any one of the listed instruments.',
@@ -357,23 +381,59 @@ async function resolveWithLlm(items: { raw: string; candidates: AssetCandidate[]
   return out
 }
 
-// An account this one-sided is taken to mean its usual kind of instrument when the posts leave a ticker open.
-const HABIT_SHARE = 0.8
+// Fills in what each candidate trades at, where it is cheap to know: Hyperliquid's mid, the pool's price, and one
+// Yahoo quote for the listing with exactly this symbol.
+async function withPrices(raw: string, candidates: AssetCandidate[], mids: Record<string, number>): Promise<AssetCandidate[]> {
+  return Promise.all(candidates.map(async (candidate) => {
+    if (candidate.priceUsd) return candidate
+    if (candidate.provider === 'hyperliquid') return { ...candidate, priceUsd: mids[candidate.symbol] }
+    if (candidate.provider === 'yahoo' && cleanSymbol(candidate.symbol) === raw) return { ...candidate, priceUsd: await yahooPrice(candidate.sourceId) }
+    return candidate
+  }))
+}
 
-export function resolveByHabit(raw: string, candidates: AssetCandidate[], cryptoShare?: number) {
-  if (cryptoShare === undefined) return null
-  const exact = candidates.filter((candidate) => cleanSymbol(candidate.symbol) === raw)
-  if (cryptoShare <= 1 - HABIT_SHARE) return exact.find((candidate) => candidate.assetClass === 'stock') ?? null
-  if (cryptoShare >= HABIT_SHARE) return exact.find((candidate) => candidate.assetClass === 'crypto') ?? null
-  return null
+async function yahooPrice(symbol: string): Promise<number | undefined> {
+  try {
+    const response = await yahooQueue(() => fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`, { headers: yahooHeaders() }))
+    if (!response.ok) return undefined
+    const price = Number((await response.json()).chart?.result?.[0]?.meta?.regularMarketPrice)
+    return Number.isFinite(price) && price > 0 ? price : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// What an instrument already in use is: its name, kind and venue, looked up from the venue that prices it. Null
+// where the venue no longer lists it, which leaves it to be tried again later.
+export async function describeInstrument(instrument: { ticker: string; assetClass: AssetClass; sourceId: string }): Promise<Pick<ResolvedAsset, 'name' | 'kind' | 'venue'> | null> {
+  const raw = cleanSymbol(instrument.ticker)
+  if (instrument.sourceId.startsWith('gt:')) {
+    const token = instrument.sourceId.split(':').at(-1)?.toLowerCase()
+    const pool = (await onchainSearch(raw)).find((candidate) => candidate.sourceId === instrument.sourceId || candidate.address?.toLowerCase() === token)
+    return pool ? { name: pool.name, kind: 'token', venue: pool.exchange ?? null } : null
+  }
+  if (instrument.assetClass === 'crypto') {
+    // Hyperliquid lists a coin by symbol alone; the project's name comes from its most traded on-chain token.
+    const name = COMMON_ASSETS[raw]?.assetClass === 'crypto' ? COMMON_ASSETS[raw].name : pickOnchain(await onchainSearch(raw), [])?.name ?? null
+    return { name, kind: 'perp', venue: 'hyperliquid' }
+  }
+  const listed = (await yahooSearch(cleanSymbol(instrument.sourceId))).find((candidate) => candidate.sourceId === cleanSymbol(instrument.sourceId))
+  return listed ? { name: listed.name, kind: instrumentKind(listed), venue: listed.exchange ?? null } : null
 }
 
 function describeCandidate(candidate: AssetCandidate) {
+  const priceUsd = candidate.priceUsd
   if (candidate.provider === 'geckoterminal') {
-    return { kind: 'crypto token traded on-chain', symbol: candidate.symbol, name: candidate.name, chain: candidate.exchange, dailyVolumeUsd: Math.round(candidate.volumeUsd ?? 0) }
+    return { kind: 'crypto token traded on-chain', symbol: candidate.symbol, name: candidate.name, chain: candidate.exchange, dailyVolumeUsd: Math.round(candidate.volumeUsd ?? 0), priceUsd }
   }
-  if (candidate.provider === 'hyperliquid') return { kind: 'crypto token with a perpetual on Hyperliquid', symbol: candidate.symbol }
-  return { kind: candidate.quoteType === 'ETF' ? 'exchange-traded fund' : 'listed company stock', symbol: candidate.symbol, name: candidate.name, exchange: candidate.exchange }
+  if (candidate.provider === 'hyperliquid') return { kind: 'crypto token with a perpetual on Hyperliquid', symbol: candidate.symbol, name: candidate.name, priceUsd }
+  return { kind: candidate.quoteType === 'ETF' ? 'exchange-traded fund' : 'listed company stock', symbol: candidate.symbol, name: candidate.name, exchange: candidate.exchange, priceUsd }
+}
+
+function instrumentKind(candidate: AssetCandidate): InstrumentKind {
+  if (candidate.provider === 'geckoterminal') return 'token'
+  if (candidate.provider === 'hyperliquid') return 'perp'
+  return candidate.quoteType === 'ETF' ? 'etf' : 'stock'
 }
 
 function toResolvedAsset(raw: string, candidate: AssetCandidate, resolvedBy: ResolvedBy): ResolvedAsset {
@@ -383,6 +443,8 @@ function toResolvedAsset(raw: string, candidate: AssetCandidate, resolvedBy: Res
     sourceId: candidate.sourceId,
     name: candidate.name,
     provider: candidate.provider,
+    kind: instrumentKind(candidate),
+    venue: candidate.provider === 'hyperliquid' ? 'hyperliquid' : candidate.exchange ?? null,
     resolvedBy,
     confidence: Math.min(1, Math.max(0.5, candidate.score / 1_000_000)),
   }

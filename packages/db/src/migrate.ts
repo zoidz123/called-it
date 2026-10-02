@@ -177,6 +177,33 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS idx_call_tweets_handle_asset ON call_tweets(handle, asset)`,
   `CREATE INDEX IF NOT EXISTS idx_asset_feedback_created ON asset_feedback(created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_asset_feedback_handle_asset ON asset_feedback(lower(handle), asset)`,
+  // The registry: every instrument a ticker has been priced against, with what it is. One ticker can have several.
+  `CREATE TABLE IF NOT EXISTS instruments (
+    ticker TEXT NOT NULL,
+    asset_class TEXT NOT NULL CHECK (asset_class IN ('crypto','stock')),
+    source_id TEXT NOT NULL,
+    kind TEXT,
+    name TEXT,
+    venue TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (ticker, asset_class, source_id)
+  )`,
+  // A correction made by hand. With a handle it fixes what that account means by the ticker; with an empty handle
+  // it sets what the ticker means for any account whose own posts do not settle it.
+  `CREATE TABLE IF NOT EXISTS instrument_pins (
+    ticker TEXT NOT NULL,
+    handle TEXT NOT NULL DEFAULT '',
+    asset_class TEXT NOT NULL CHECK (asset_class IN ('crypto','stock')),
+    source_id TEXT NOT NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (ticker, handle)
+  )`,
+  // Instruments priced before the registry existed are entered from the calls that used them.
+  `INSERT INTO instruments (ticker, asset_class, source_id)
+   SELECT DISTINCT asset, asset_class, source_id FROM calls
+   ON CONFLICT DO NOTHING`,
   // A scorecard stored before every post was scored on its own has calls but no callouts, which leaves it off the
   // leaderboard. Each one is queued for a rescore from its stored posts; once rescored it no longer matches.
   `INSERT INTO scan_jobs (handle, job_type, status, stage, progress, progress_message)

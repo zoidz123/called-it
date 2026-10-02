@@ -3,6 +3,7 @@ import { performance } from 'node:perf_hooks'
 import {
   candidatesFromTweets,
   classifyCandidates,
+  describeInstrument,
   filterIgnoredCashtags,
   getAuthorTimeline,
   getXUser,
@@ -16,6 +17,11 @@ import {
 import {
   claimNextScanJob,
   completeScanJob,
+  dropAssetCalls,
+  getAccountPins,
+  getUndescribedInstruments,
+  getTickerRegistry,
+  recordInstruments,
   failScanJob,
   getLastScannedAt,
   getSettledCallouts,
@@ -69,7 +75,7 @@ async function processPriceRefreshJob(job: any) {
   const latency = createScanLatencyLogger({ jobId: job.id, handle })
   try {
     await updateScanJob(job.id, { stage: 'pricing', progress: 20, progress_message: 'Refreshing prices' })
-    const [tweets, resolved, settled] = await Promise.all([getStoredClassifiedTweets(handle), storedInstruments(handle), settledCallouts(handle)])
+    const [tweets, { resolved, settled }] = await Promise.all([getStoredClassifiedTweets(handle), scoringState(handle)])
     const { calls } = await latency.measure('pricing_scoring', () => scoreCalls(handle, tweets, { resolved, settled }))
 
     await updateScanJob(job.id, {
@@ -126,8 +132,9 @@ async function processFullScanJob(job: any) {
     const classified = await latency.measure('classification', async () => filterIgnoredCashtags(user.handle, await classifyCandidates(candidates)))
 
     await updateScanJob(job.id, { stage: 'pricing', progress: 75, classified: classified.length, progress_message: 'Pricing first calls' })
-    const [resolved, settled] = await Promise.all([storedInstruments(handle), settledCallouts(handle)])
-    const { calls } = await latency.measure('pricing_scoring', () => scoreCalls(user.handle, [...stored, ...classified], { resolved, resolveMissing: true, settled }))
+    const { resolved, settled } = await scoringState(handle)
+    const { calls, instruments } = await latency.measure('pricing_scoring', () => scoreCalls(user.handle, [...stored, ...classified], { resolved, resolveMissing: true, settled, registryFor: getTickerRegistry }))
+    await recordInstruments(instruments)
 
     await updateScanJob(job.id, { stage: 'persisting', progress: 92, calls_found: calls.length, priced_calls: calls.length, progress_message: 'Saving scorecard' })
     await latency.measure('persistence', () => persistScorecard({ user, classifiedTweets: classified, calls }))
@@ -141,8 +148,38 @@ async function processFullScanJob(job: any) {
   }
 }
 
+// Fills in what each instrument in the registry is, for the ones entered before it recorded that. One whose venue
+// does not answer is left as it is and tried again the next time the worker starts.
+export async function describeRegistry() {
+  for (const instrument of await getUndescribedInstruments()) {
+    try {
+      const described = await describeInstrument({ ticker: instrument.symbol, assetClass: instrument.assetClass, sourceId: instrument.sourceId })
+      if (described) await recordInstruments([{ ...instrument, ...described }])
+    } catch (error) {
+      console.error(`could not describe ${instrument.symbol} ${instrument.sourceId}`, error)
+    }
+  }
+}
+
+// What an account is scored against: the instrument each of its tickers is priced on, and its results that are
+// already final. A correction pinned by hand replaces the stored instrument, and that ticker's old rows and results
+// go with it, since they belonged to the other instrument.
+export async function scoringState(handle: string) {
+  const [resolved, settled, pins] = await Promise.all([storedInstruments(handle), settledCallouts(handle), getAccountPins(handle)])
+  const moved = [...pins].flatMap(([asset, pin]) => {
+    const stored = resolved.get(asset)
+    return stored && (stored.sourceId !== pin.sourceId || stored.assetClass !== pin.assetClass) ? [asset] : []
+  })
+  if (moved.length) {
+    await dropAssetCalls(handle, moved)
+    for (const key of [...settled.keys()]) if (moved.includes(key.split('|')[1])) settled.delete(key)
+  }
+  for (const [asset, pin] of pins) resolved.set(asset, { ...pin, resolvedBy: 'pin' })
+  return { resolved, settled }
+}
+
 // The instrument each of a handle's assets was priced against at its last scan.
-export async function storedInstruments(handle: string) {
+async function storedInstruments(handle: string) {
   const sources = await getStoredAssetSources(handle)
   return new Map(sources.map((row: any): [string, ResolvedAsset] => [row.asset, {
     symbol: row.asset,
@@ -153,7 +190,7 @@ export async function storedInstruments(handle: string) {
   }]))
 }
 
-export async function settledCallouts(handle: string) {
+async function settledCallouts(handle: string) {
   const rows = await getSettledCallouts(handle)
   return new Map(rows.map((row: any): [string, SettledCallout] => [settledKey(row.tweet_id, row.asset, row.direction), {
     entryPrice: row.entry_price,

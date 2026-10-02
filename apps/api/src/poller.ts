@@ -10,12 +10,14 @@ import {
 import {
   createOrReuseScanJob,
   getStoredClassifiedTweets,
+  getTickerRegistry,
   getTrackedAccounts,
   hasRecentRefreshJob,
   markScanned,
   persistScorecard,
+  recordInstruments,
 } from '@called-it/db'
-import { settledCallouts, storedInstruments } from './worker'
+import { scoringState } from './worker'
 
 const POLL_MINUTES = Number(process.env.FEED_POLL_MINUTES ?? 15)
 // X's search can list a post a little after it was written, so each read reaches back past the last one.
@@ -111,8 +113,9 @@ async function ingest(user: XUser, tweets: Tweet[]) {
   const storedIds = new Set(stored.map((tweet) => tweet.id))
   const classified = filterIgnoredCashtags(user.handle, await classifyCandidates(candidates.filter((tweet) => !storedIds.has(tweet.id))))
   if (!classified.length) return 0
-  const [resolved, settled] = await Promise.all([storedInstruments(user.handle), settledCallouts(user.handle)])
-  const { calls } = await scoreCalls(user.handle, [...stored, ...classified], { resolved, resolveMissing: true, settled })
+  const { resolved, settled } = await scoringState(user.handle)
+  const { calls, instruments } = await scoreCalls(user.handle, [...stored, ...classified], { resolved, resolveMissing: true, settled, registryFor: getTickerRegistry })
+  await recordInstruments(instruments)
   await persistScorecard({ user, classifiedTweets: classified, calls })
   return classified.length
 }

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { isTokenizedStock, pickOnchain, resolveByHabit, resolveByRules } from './index'
+import { isTokenizedStock, pickOnchain, resolveByRules } from './index'
 
 const pool = (fields: Record<string, unknown>) => ({
   provider: 'geckoterminal' as const,
@@ -39,14 +39,6 @@ test('recognises a tokenized stock by the company name or the issuer label', () 
   expect(isTokenizedStock('BP p.l.c.', 'Backpack')).toBe(false)
 })
 
-test('falls back on what a one-sided account usually calls when the posts leave a ticker open', () => {
-  const candidates = [stock, pool({})]
-  expect(resolveByHabit('MOO', candidates, 0.05)).toBe(stock)
-  expect(resolveByHabit('MOO', candidates, 0.95)?.name).toBe('Memory cow Moo')
-  expect(resolveByHabit('MOO', candidates, 0.5)).toBeNull()
-  expect(resolveByHabit('MOO', candidates)).toBeNull()
-})
-
 test('settles a ticker by rule only when a single listed venue knows it', () => {
   expect(resolveByRules('MOO', [stock])).toBe(stock)
   expect(resolveByRules('MOO', [perp])).toBe(perp)
@@ -55,4 +47,8 @@ test('settles a ticker by rule only when a single listed venue knows it', () => 
   expect(resolveByRules('MOO', [stock, perp])).toBeNull()
   // A lone on-chain match is not trusted without the posts either.
   expect(resolveByRules('MOO', [pool({})])).toBeNull()
+})
+
+test('a lone on-chain match or a shared symbol never settles by rule, so the posts or the registry decide', () => {
+  expect(resolveByRules('MOO', [stock, perp, pool({})])).toBeNull()
 })
