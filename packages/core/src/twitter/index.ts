@@ -92,9 +92,11 @@ export async function getAuthorTimeline(
 }
 
 // New original posts by any of `handles` since `since`, keyed by handle. One search covers many accounts, so the cost
-// is the posts that come back and not a request per account.
-export async function getPostsSince(handles: string[], since: Date): Promise<Map<string, Tweet[]>> {
+// is the posts that come back and not a request per account. `truncated` lists the accounts of any search that ran
+// past the page limit: their older posts in the window were not read, so they must not be taken as read up to now.
+export async function getPostsSince(handles: string[], since: Date): Promise<{ posts: Map<string, Tweet[]>; truncated: string[] }> {
   const posts = new Map<string, Tweet[]>(handles.map((handle) => [handle.toLowerCase(), []]))
+  const truncated: string[] = []
   for (const group of authorGroups([...posts.keys()])) {
     const query = authorsQuery(group, since)
     let cursor: string | undefined
@@ -105,10 +107,10 @@ export async function getPostsSince(handles: string[], since: Date): Promise<Map
       cursor = rawTweets(payload).length ? nextCursor(payload) : undefined
       if (!cursor) break
     }
-    if (cursor) console.warn(`twitter: more than ${MAX_AUTHORS_PAGES} pages of new posts for one query; the rest are left for the next read`)
+    if (cursor) truncated.push(...group)
   }
   for (const [handle, tweets] of posts) posts.set(handle, dedupeTweets(tweets))
-  return posts
+  return { posts, truncated }
 }
 
 // Splits handles into groups whose combined search query stays under the length limit.

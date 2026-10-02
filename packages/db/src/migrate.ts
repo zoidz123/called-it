@@ -177,6 +177,14 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS idx_call_tweets_handle_asset ON call_tweets(handle, asset)`,
   `CREATE INDEX IF NOT EXISTS idx_asset_feedback_created ON asset_feedback(created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_asset_feedback_handle_asset ON asset_feedback(lower(handle), asset)`,
+  // A scorecard stored before every post was scored on its own has calls but no callouts, which leaves it off the
+  // leaderboard. Each one is queued for a rescore from its stored posts; once rescored it no longer matches.
+  `INSERT INTO scan_jobs (handle, job_type, status, stage, progress, progress_message)
+   SELECT u.handle, 'price_refresh', 'pending', 'queued', 5, 'Queued price refresh'
+   FROM users u
+   WHERE EXISTS (SELECT 1 FROM calls WHERE calls.handle = u.handle)
+     AND NOT EXISTS (SELECT 1 FROM callouts WHERE callouts.handle = u.handle)
+   ON CONFLICT DO NOTHING`,
 ]
 
 export async function migrate() {

@@ -51,19 +51,23 @@ export function startPollLoop({ minutes = POLL_MINUTES } = {}) {
 // that posted a call. Accounts too far behind get a scan job instead.
 export async function pollOnce(now = Date.now()) {
   const { fresh, stale } = splitByGap(await getTrackedAccounts(), now)
-  for (const { user } of stale) {
-    if (!(await hasRecentRefreshJob(user.handle, 'full_scan'))) await createOrReuseScanJob({ handle: user.handle })
-  }
+  for (const { user } of stale) await catchUp(user.handle)
   if (!fresh.length) return
 
   const since = new Date(Math.min(...fresh.map((account) => Date.parse(account.lastScannedAt))) - OVERLAP_MS)
-  const posts = await getPostsSince(fresh.map((account) => account.user.handle), since)
+  const { posts, truncated } = await getPostsSince(fresh.map((account) => account.user.handle), since)
   for (const [id, at] of seen) if (now - at > SEEN_TTL_MS) seen.delete(id)
+
+  // A search cut off at its page limit left older posts unread. Its accounts keep their old read time and are caught
+  // up by a scan, which reads the whole gap; marking them read here would skip those posts for good.
+  const cutOff = new Set(truncated)
+  for (const handle of cutOff) await catchUp(handle)
 
   const read: string[] = []
   let found = 0
   let calls = 0
   for (const { user } of fresh) {
+    if (cutOff.has(user.handle)) continue
     const tweets = (posts.get(user.handle) ?? []).filter((tweet) => !seen.has(tweet.id))
     try {
       calls += await ingest(user, tweets)
@@ -76,7 +80,12 @@ export async function pollOnce(now = Date.now()) {
     }
   }
   await markScanned(read, new Date(now).toISOString())
-  console.log(`[feed-poll] accounts=${fresh.length} read=${read.length} behind=${stale.length} posts=${found} calls=${calls}`)
+  console.log(`[feed-poll] accounts=${fresh.length} read=${read.length} behind=${stale.length + cutOff.size} posts=${found} calls=${calls}`)
+}
+
+// Queues an ordinary scan for an account the shared read cannot cover, at most once per refresh cooldown.
+async function catchUp(handle: string) {
+  if (!(await hasRecentRefreshJob(handle, 'full_scan'))) await createOrReuseScanJob({ handle })
 }
 
 export function splitByGap(accounts: Tracked[], now: number) {
