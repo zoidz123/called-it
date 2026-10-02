@@ -22,7 +22,11 @@ export async function scoreCalls(
   const resolved = new Map(options.resolved)
   if (!options.resolved || options.resolveMissing) {
     const missing = assets.filter((asset) => !resolved.has(asset))
-    const found = await resolveAssets(missing, buildAssetContexts(classifiedTweets, missing), { allowLlm: options.allowLlmAssetResolution })
+    const known = [...resolved.values()]
+    const found = await resolveAssets(missing, buildAssetContexts(classifiedTweets, missing), {
+      allowLlm: options.allowLlmAssetResolution,
+      cryptoShare: known.length ? known.filter((instrument) => instrument.assetClass === 'crypto').length / known.length : undefined,
+    })
     for (const [asset, instrument] of found) resolved.set(asset, instrument)
   }
   const callGroups = await mapWithConcurrency(assets, Number(process.env.PRICING_CONCURRENCY ?? 6), async (asset) => {
@@ -163,13 +167,16 @@ export function directionalReturn(direction: Direction, entry: number, exit: num
   return direction === 'BULL' ? (exit - entry) / entry : (entry - exit) / entry
 }
 
-function buildAssetContexts(classifiedTweets: ClassifiedTweet[], assets: string[]) {
+// How many of an account's posts on a ticker are read to tell which instrument the ticker means.
+const ASSET_CONTEXT_TWEETS = 5
+
+export function buildAssetContexts(classifiedTweets: ClassifiedTweet[], assets: string[]) {
   const contexts = new Map<string, AssetContext>()
   for (const asset of assets) {
     const tweets = classifiedTweets
       .filter((tweet) => tweet.stances.some((stance) => stance.asset === asset))
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-      .slice(0, 3)
+      .slice(0, ASSET_CONTEXT_TWEETS)
       .map((tweet) => ({ id: tweet.id, text: tweet.text, createdAt: tweet.createdAt }))
     contexts.set(asset, { asset, tweets })
   }

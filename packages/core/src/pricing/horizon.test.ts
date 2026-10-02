@@ -48,6 +48,12 @@ describe('pricesAt', () => {
     expect(pricesAt(mixed, '2026-01-02T00:10:00Z', now)?.entry.price).toBe(56)
   })
 
+  test('returns nothing for a post from long before the history begins', () => {
+    // A token's pool opened on 2 March: a call made in January cannot be entered at the launch price.
+    expect(pricesAt(stock, '2026-01-15T12:00:00Z', now)).toBeNull()
+    expect(pricesAt(stock, '2026-02-28T12:00:00Z', now)?.entry.price).toBe(100)
+  })
+
   test('returns nothing for a post after the last bar', () => {
     expect(pricesAt(stock, '2026-04-01T00:00:00Z', now)).toBeNull()
   })

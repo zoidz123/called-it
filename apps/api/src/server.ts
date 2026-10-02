@@ -27,6 +27,8 @@ const FEEDBACK_RATE_WINDOW_MS = 60 * 60 * 1000
 const FEEDBACK_DUPLICATE_WINDOW_MS = 10 * 60 * 1000
 const PRICE_CACHE_TTL_MS = 10 * 60 * 1000
 const FEED_CHART_DAYS = 14
+const FEED_PRICE_WAIT_MS = 2500
+const CHART_PRICE_WAIT_MS = 12_000
 const LIVE_MIDS_TTL_MS = 5000
 let liveMids: { expiresAt: number; mids: Promise<Record<string, number>> } | null = null
 const SUMMARY_CONCURRENCY = 4
@@ -67,7 +69,9 @@ export async function buildServer() {
     // `coin` names the Hyperliquid feed the page can follow from there.
     const live: Record<string, { coin: string | null; price: number }> = {}
     await Promise.all(sources.map(async (source: any) => {
-      const bars = await assetPrices(source, from)
+      // On-chain prices come through a slow, rate-limited API. The feed does not wait for them: a row goes without
+      // its price line this once, and the fetch carries on into the cache for the next load.
+      const bars = await within(assetPrices(source, from), FEED_PRICE_WAIT_MS)
       const lastClose = bars.at(-1)?.close
       const quote = liveQuote(source, mids, lastClose)
       prices[source.asset] = bars.map((bar) => [bar.t, bar.close])
@@ -95,7 +99,7 @@ export async function buildServer() {
     if (!asset) return reply.code(400).send({ error: 'Asset is required.' })
     const thread = await getAssetThread(parseXHandle(request.params.handle), asset)
     if (!thread.source || !thread.callouts.length) return reply.code(404).send({ error: 'Asset row not found.' })
-    return { asset, callouts: thread.callouts, prices: await assetPrices(thread.source, thread.callouts[0].created_at) }
+    return { asset, callouts: thread.callouts, prices: await within(assetPrices(thread.source, thread.callouts[0].created_at), CHART_PRICE_WAIT_MS) }
   })
 
   app.post('/api/users/:handle/asset-feedback', async (request: any, reply) => {
@@ -261,6 +265,11 @@ function pruneFeedbackBuckets(now: number) {
   for (const [key, bucket] of feedbackBuckets) {
     if (bucket.resetAt <= now) feedbackBuckets.delete(key)
   }
+}
+
+// The bars if they arrive in time, else none. The fetch carries on into the cache either way.
+function within(bars: Promise<Bar[]>, ms: number) {
+  return Promise.race([bars, new Promise<Bar[]>((done) => setTimeout(() => done([]), ms))])
 }
 
 // Hyperliquid's mids, shared for a few seconds across feed loads. A failed fetch leaves every asset on its last close.

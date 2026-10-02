@@ -1,4 +1,5 @@
 import { optionalEnv } from '../env'
+import { spacedQueue } from '../spaced'
 import { HORIZON_DAYS, type AssetClass, type HorizonPrices, type PricePoint, type ResolvedAsset } from '../types'
 
 const HOUR_MS = 60 * 60 * 1000
@@ -6,6 +7,8 @@ const DAY_MS = 24 * HOUR_MS
 // Yahoo serves hourly bars for the last 730 days. Hyperliquid keeps only its most recent 5000 candles per interval.
 const YAHOO_HOURLY_DAYS = 729
 const STOCK_SESSION_MS = 6.5 * HOUR_MS
+// The longest a post waits for its first price: a market shut over a long weekend, with room to spare.
+const MAX_ENTRY_WAIT_MS = 5 * DAY_MS
 
 // One traded interval: it opens at `t` and its close is known at `end`.
 export type Bar = { t: number; end: number; open: number; high: number; low: number; close: number }
@@ -14,6 +17,7 @@ export type PriceSeries = { bars: Bar[]; current: PricePoint }
 
 export async function getPriceSeries(asset: ResolvedAsset, from: string): Promise<PriceSeries | null> {
   try {
+    if (isOnchainSource(asset.sourceId)) return await geckoSeries(asset.sourceId)
     return asset.provider === 'hyperliquid' || asset.assetClass === 'crypto'
       ? await hyperliquidSeries(cleanSymbol(asset.sourceId), from)
       : await yahooSeries(asset.sourceId, from)
@@ -71,6 +75,10 @@ export function liveQuote(
 
 // Daily candles only, for a chart. Scoring uses getPriceSeries, which also pulls hourly bars.
 export async function getDailyBars(asset: ResolvedAsset, from: string): Promise<Bar[]> {
+  if (isOnchainSource(asset.sourceId)) {
+    const start = new Date(from).getTime() - 10 * DAY_MS
+    return (await geckoBars(asset.sourceId, 'day', DAY_MS)).filter((bar) => bar.end > start)
+  }
   return asset.provider === 'hyperliquid' || asset.assetClass === 'crypto'
     ? hyperliquidBars(cleanSymbol(asset.sourceId), Date.parse(`${dayKey(from)}T00:00:00.000Z`) - 10 * DAY_MS, '1d', DAY_MS)
     : yahooBars(asset.sourceId, new Date(from).getTime() - 10 * DAY_MS, '1d')
@@ -82,6 +90,9 @@ export function pricesAt(series: PriceSeries, date: string, now = Date.now()): {
   const postedAt = new Date(date).getTime()
   const bar = series.bars.find((item) => item.end > postedAt)
   if (!bar) return null
+  // A post from well before the series begins has no price: a token's history starts when its pool does, and a
+  // call made before that cannot be entered at the launch price.
+  if (bar.t - postedAt > MAX_ENTRY_WAIT_MS) return null
   const inBar = bar.t <= postedAt
   const entryAt = inBar ? bar.end : bar.t
   return {
@@ -191,6 +202,60 @@ async function hyperliquidBars(symbol: string, start: number, interval: '1d' | '
       close: Number(item?.c),
     }))
     .filter((bar: Bar) => Number.isFinite(bar.close) && bar.close > 0)
+}
+
+const ONCHAIN_PREFIX = 'gt:'
+// GeckoTerminal's free API allows about 30 requests a minute and refuses more with a 429, so its requests go out one
+// at a time, spaced apart. A refusal holds the whole line while it waits, longer each time.
+const geckoQueue = spacedQueue(2100)
+const GECKO_BACKOFF_MS = [10_000, 20_000, 40_000, 60_000]
+
+// An on-chain token's price source: the GeckoTerminal network and pool it trades in, and the token's own address so
+// the price is the token's whichever side of the pool it sits on.
+export function onchainSource(network: string, pool: string, token: string) {
+  return `${ONCHAIN_PREFIX}${network}:${pool}:${token}`
+}
+
+export function isOnchainSource(sourceId: string) {
+  return sourceId.startsWith(ONCHAIN_PREFIX)
+}
+
+async function geckoSeries(sourceId: string): Promise<PriceSeries> {
+  const daily = await geckoBars(sourceId, 'day', DAY_MS)
+  const last = daily.at(-1)
+  if (!last) throw new Error(`GeckoTerminal ${sourceId} history missing`)
+  const hourly = await geckoBars(sourceId, 'hour', HOUR_MS).catch(() => [])
+  // The last candle is still forming, so its close is the live price.
+  return {
+    bars: mergeBars(daily, hourly),
+    current: { price: (hourly.at(-1) ?? last).close, pricedAt: new Date().toISOString() },
+  }
+}
+
+// The pool's latest 1000 candles, oldest first: its whole life in days, about six weeks in hours.
+async function geckoBars(sourceId: string, timeframe: 'day' | 'hour', span: number): Promise<Bar[]> {
+  const [network, pool, token] = sourceId.slice(ONCHAIN_PREFIX.length).split(':')
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${pool}/ohlcv/${timeframe}?limit=1000&currency=usd${token ? `&token=${token}` : ''}`
+  const payload = await geckoGet(url)
+  const rows: unknown[][] = payload?.data?.attributes?.ohlcv_list ?? []
+  return rows
+    .map((row) => ({ t: Number(row[0]) * 1000, end: Number(row[0]) * 1000 + span, open: Number(row[1]), high: Number(row[2]), low: Number(row[3]), close: Number(row[4]) }))
+    .filter((bar) => Number.isFinite(bar.close) && bar.close > 0)
+    .sort((a, b) => a.t - b.t)
+}
+
+function geckoGet(url: string): Promise<any> {
+  return geckoQueue(async () => {
+    for (let attempt = 0; ; attempt++) {
+      const response = await fetch(url, { headers: { accept: 'application/json' } })
+      if (response.status === 429 && attempt < GECKO_BACKOFF_MS.length) {
+        await new Promise((done) => setTimeout(done, GECKO_BACKOFF_MS[attempt]))
+        continue
+      }
+      if (!response.ok) throw new Error(`GeckoTerminal ${response.status}`)
+      return response.json()
+    }
+  })
 }
 
 async function hyperliquidInfo(body: Record<string, unknown>) {

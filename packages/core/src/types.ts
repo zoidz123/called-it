@@ -47,7 +47,8 @@ export type ResolvedAsset = {
   assetClass: AssetClass
   sourceId: string
   name: string | null
-  provider?: 'yahoo' | 'hyperliquid'
+  // An on-chain token is priced from its GeckoTerminal pool; its sourceId is "gt:network:pool:token".
+  provider?: 'yahoo' | 'hyperliquid' | 'geckoterminal'
   resolvedBy?: 'common' | 'rule' | 'llm'
   confidence?: number
 }
