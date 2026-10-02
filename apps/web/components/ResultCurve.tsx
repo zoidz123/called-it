@@ -22,8 +22,14 @@ export function ResultCurve({ points }: { points: ResultPoint[] }) {
     const byDay = new Map(points.map((point) => [point.time, point]))
     const chart = createChart(frame.current, {
       autoSize: true,
+      // The time range stays on the whole history. Dragging the price axis still shrinks or enlarges the values.
       handleScroll: false,
-      handleScale: false,
+      handleScale: {
+        mouseWheel: false,
+        pinch: false,
+        axisPressedMouseMove: { time: false, price: true },
+        axisDoubleClickReset: { time: false, price: true },
+      },
       layout: { background: { type: ColorType.Solid, color: c.win }, textColor: c.mid, fontFamily: '"DM Mono", ui-monospace, monospace', fontSize: 11, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: c.soft } },
       rightPriceScale: { borderVisible: false },

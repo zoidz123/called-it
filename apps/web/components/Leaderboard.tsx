@@ -26,6 +26,18 @@ export type LeaderboardRow = {
 
 const PAGE_SIZE = 100
 
+// A click on the row opens the trader. The name is already a link, so that click keeps its own behavior,
+// including opening in a new tab. Modifier clicks on the rest of the row do the same.
+function openTrader(event: { button: number; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; target: EventTarget | null }, href: string) {
+  if ((event.target as HTMLElement | null)?.closest('a')) return
+  if (event.button !== 0) return
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+    window.open(href, '_blank', 'noopener')
+    return
+  }
+  window.location.href = href
+}
+
 export function Leaderboard({ initialRows, horizon }: { initialRows: LeaderboardRow[]; horizon: Horizon }) {
   const [rows, setRows] = useState(initialRows)
   const [loading, setLoading] = useState(false)
@@ -70,8 +82,17 @@ export function Leaderboard({ initialRows, horizon }: { initialRows: Leaderboard
               const avg = row[`avg_return_${horizon}d`]
               const calls = row[`calls_${horizon}d`]
               const wins = Math.round(row[`hit_rate_${horizon}d`] * calls)
+              const href = `/u/${row.handle}?h=${horizon}`
               return (
-                <tr className="leader-row" key={row.handle}>
+                <tr
+                  className="leader-row"
+                  key={row.handle}
+                  onClick={(event) => openTrader(event, href)}
+                  onAuxClick={(event) => {
+                    if (event.button !== 1 || (event.target as HTMLElement).closest('a')) return
+                    window.open(href, '_blank', 'noopener')
+                  }}
+                >
                   <td className="rank-cell">{index + 1}</td>
                   <td>
                     <a href={`/u/${row.handle}?h=${horizon}`} className="trader-cell">

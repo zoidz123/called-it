@@ -60,20 +60,21 @@ export async function pollOnce(now = Date.now()) {
 
   // A search cut off at its page limit left older posts unread. Its accounts keep their old read time and are caught
   // up by a scan, which reads the whole gap; marking them read here would skip those posts for good.
-  const cutOff = new Set(truncated)
+  const cutOff = new Set(truncated.map((handle) => handle.toLowerCase()))
   for (const handle of cutOff) await catchUp(handle)
 
   const read: string[] = []
   let found = 0
   let calls = 0
   for (const { user } of fresh) {
-    if (cutOff.has(user.handle)) continue
-    const tweets = (posts.get(user.handle) ?? []).filter((tweet) => !seen.has(tweet.id))
+    const tweets = postsReadFor(user.handle, posts, cutOff)
+    if (!tweets) continue
+    const unseen = tweets.filter((tweet) => !seen.has(tweet.id))
     try {
-      calls += await ingest(user, tweets)
-      for (const tweet of tweets) seen.set(tweet.id, now)
+      calls += await ingest(user, unseen)
+      for (const tweet of unseen) seen.set(tweet.id, now)
       read.push(user.handle)
-      found += tweets.length
+      found += unseen.length
     } catch (error) {
       // Left unmarked, so the next read covers these posts again.
       console.error(`feed poll failed for @${user.handle}`, error)
@@ -86,6 +87,14 @@ export async function pollOnce(now = Date.now()) {
 // Queues an ordinary scan for an account the shared read cannot cover, at most once per refresh cooldown.
 async function catchUp(handle: string) {
   if (!(await hasRecentRefreshJob(handle, 'full_scan'))) await createOrReuseScanJob({ handle })
+}
+
+// getPostsSince keys its posts and its cut-off list with lowercase handles. The stored handle can differ in case.
+// A cut-off account returns null so its read time stays put; any other account returns the posts found for it.
+export function postsReadFor<T extends { id: string }>(handle: string, posts: Map<string, T[]>, cutOff: Set<string>): T[] | null {
+  const key = handle.toLowerCase()
+  if (cutOff.has(key)) return null
+  return posts.get(key) ?? []
 }
 
 export function splitByGap(accounts: Tracked[], now: number) {

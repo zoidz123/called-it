@@ -151,13 +151,17 @@ function AssetThread({ handle, row, horizon }: { handle: string; row: AssetRow; 
             onMouseEnter={() => setSelectedId(callout.tweet_id)}
           >
             <header>
-              <Result value={callout[`return_${horizon}d`]} />
-              <time>{formatDate(callout.created_at)}</time>
-              <span>{callout.direction === 'BULL' ? '▲ Bullish' : '▼ Bearish'} at {formatPrice(callout.entry_price)}</span>
-              <span className="thread-markout"><Outcome value={callout[`return_${horizon}d`]} horizon={horizon} /></span>
-              <a href={callout.url} target="_blank" rel="noreferrer" aria-label="Open post">
-                <ExternalLink size={14} strokeWidth={2} aria-hidden="true" />
-              </a>
+              <span className="thread-side">
+                <span className={callout.direction === 'BULL' ? 'good' : 'bad'}>{callout.direction === 'BULL' ? '▲ Bullish' : '▼ Bearish'}</span>
+                <time dateTime={callout.created_at}>{` ${formatDate(callout.created_at)} `}</time>
+                <span>{`at ${formatPrice(callout.entry_price)}`}</span>
+              </span>
+              <span className="thread-markout">
+                <Outcome value={callout[`return_${horizon}d`]} />
+                <a href={callout.url} target="_blank" rel="noreferrer" aria-label="Open post">
+                  <ExternalLink size={14} strokeWidth={2} aria-hidden="true" />
+                </a>
+              </span>
             </header>
             <p>{callout.text}</p>
           </li>
@@ -174,19 +178,10 @@ function Money({ value }: { value: number | null }) {
   return <b className={`move ${value >= 0 ? 'good' : 'bad'}`} title={formatPct(value)}>{money(value)}</b>
 }
 
-// A post's result in full: the move, when it was measured, and what $1,000 became.
-function Outcome({ value, horizon }: { value: number | null; horizon: Horizon }) {
-  if (value === null) return <em className="move">not {horizon} days old yet</em>
-  return (
-    <>
-      <b className={`move ${value >= 0 ? 'good' : 'bad'}`}>{formatPct(value)}</b> {horizon} days later · $1,000 became {money(value)}
-    </>
-  )
-}
-
-function Result({ value }: { value: number | null }) {
-  if (value === null) return <span className="result-badge">-</span>
-  return <span className={`result-badge ${value > 0 ? 'won' : 'lost'}`}>{value > 0 ? 'W' : 'L'}</span>
+// The move over the selected horizon. The sign is the whole result.
+function Outcome({ value }: { value: number | null }) {
+  if (value === null) return <em className="move">too early</em>
+  return <b className={`move ${value >= 0 ? 'good' : 'bad'}`}>{formatPct(value)}</b>
 }
 
 function AssetFeedback({ handle, row }: { handle: string; row: AssetRow }) {

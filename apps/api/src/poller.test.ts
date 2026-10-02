@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 
 // The poller's imports open a database pool on load, which needs a connection string but never connects here.
 process.env.DATABASE_URL ??= 'postgres://test:test@localhost:5432/test'
-const { splitByGap } = await import('./poller')
+const { postsReadFor, splitByGap } = await import('./poller')
 
 const account = (handle: string, lastScannedAt: string) => ({
   user: { id: '1', handle, name: handle, avatarUrl: null, bio: null, followers: 0, verified: false },
@@ -18,4 +18,12 @@ test('reads recently read accounts together and hands the ones far behind to a s
   ], now)
   expect(fresh.map((item) => item.user.handle)).toEqual(['recent', 'edge'])
   expect(stale.map((item) => item.user.handle)).toEqual(['behind'])
+})
+
+test('reads shared-search posts with a lowercase handle and leaves a cut-off account unread', () => {
+  const posts = new Map([['trader', [{ id: '1' }]]])
+  const cutOff = new Set(['other'])
+  expect(postsReadFor('Trader', posts, cutOff)?.map((tweet) => tweet.id)).toEqual(['1'])
+  expect(postsReadFor('Missing', posts, cutOff)).toEqual([])
+  expect(postsReadFor('Other', posts, cutOff)).toBeNull()
 })

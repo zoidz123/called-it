@@ -670,6 +670,10 @@ p {
   border-bottom: 0;
 }
 
+.leader-row {
+  cursor: pointer;
+}
+
 .leader-row:hover td {
   background: var(--soft);
 }
@@ -794,13 +798,11 @@ p {
   font-weight: 500;
 }
 
-.streak .won,
-.result-badge.won {
+.streak .won {
   background: var(--won);
 }
 
-.streak .lost,
-.result-badge.lost {
+.streak .lost {
   background: var(--lost);
 }
 
@@ -1231,19 +1233,6 @@ em.move {
   font-weight: 500;
 }
 
-.result-badge {
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--r-ctl);
-  background: var(--soft);
-  color: #fff;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
-}
-
 /* Size containment keeps the list out of the row's height, so it is exactly as tall as the chart beside it. */
 .thread-list {
   display: grid;
@@ -1280,7 +1269,19 @@ em.move {
   font-size: var(--t-xs);
 }
 
+.thread-side {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  min-width: 0;
+  /* Flex items drop a leading or trailing space, so the gap is what separates these words. */
+  column-gap: 0.5em;
+}
+
 .thread-markout {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
   margin-left: auto;
   text-align: right;
 }
