@@ -459,14 +459,18 @@ export async function getLeaderboard({ horizon = 30, limit = 100, offset = 0 }: 
 }
 
 // The calls posted in the past few days, newest first. Each carries what its account had already posted on that asset
-// before it and how those earlier calls did N days later. `sources` is the instrument each asset is priced against.
+// before it and how those earlier calls did N days later, and the instrument that account's calls on the asset are
+// priced against: the same ticker can be a stock for one account and a token for another.
 export async function getFeed({ horizon = 30, days = 7 }: { horizon?: HorizonDays; days?: number } = {}) {
   const h = HORIZON_DAYS.includes(horizon) ? horizon : 30
   const calls = (await query(
     `SELECT c.tweet_id, c.handle, c.asset, c.direction, c.created_at, c.entry_price, c.return_pct, t.text, t.url,
-      e.prior, e.prior_same, e.wins, e.losses, e.avg_return
+      e.prior, e.prior_same, e.wins, e.losses, e.avg_return, k.asset_class, k.source_id
      FROM callouts c
      JOIN tweets t ON t.tweet_id = c.tweet_id
+     JOIN LATERAL (
+      SELECT asset_class, source_id FROM calls WHERE calls.handle = c.handle AND calls.asset = c.asset LIMIT 1
+     ) k ON true
      CROSS JOIN LATERAL (
       SELECT COUNT(*)::int AS prior,
         COUNT(*) FILTER (WHERE earlier.direction = c.direction)::int AS prior_same,
@@ -484,15 +488,11 @@ export async function getFeed({ horizon = 30, days = 7 }: { horizon?: HorizonDay
     `SELECT handle, name, avatar_url FROM users WHERE handle = ANY($1::text[])`,
     [[...new Set(calls.map((call: any) => call.handle))]],
   )).rows.map(serializeRow)
-  const sources = (await query(
-    `SELECT DISTINCT ON (asset) asset, asset_class, source_id FROM calls
-     WHERE asset = ANY($1::text[]) ORDER BY asset, priced_at DESC`,
-    [[...new Set(calls.map((call: any) => call.asset))]],
-  )).rows.map(serializeRow)
-  return { calls, accounts, sources }
+  return { calls, accounts }
 }
 
-// The stored summary of each asset, with the key of the posts it was written from.
+// The stored summary of each feed row, with the key of the posts it was written from. The `asset` column holds the
+// row's key: its ticker and the instrument it is priced against.
 export async function getFeedSummaries(assets: string[]) {
   const { rows } = await query(`SELECT asset, posts_key, summary FROM feed_summaries WHERE asset = ANY($1::text[])`, [assets])
   return rows.map(serializeRow)

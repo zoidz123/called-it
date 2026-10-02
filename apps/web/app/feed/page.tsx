@@ -3,7 +3,7 @@ import { Avatar } from '../../components/Avatar'
 import { HoldControl } from '../../components/HoldSentence'
 import { LivePrice, LiveSince, type LiveCall } from '../../components/LiveSince'
 import { API_URL, apiGet } from '../../lib/api'
-import { buildIdeas, rankIdeas, repeatLabel, timeAgo, weekSummary, type FeedAccount, type FeedCall, type FeedCaller, type FeedIdea, type FeedRank } from '../../lib/feed'
+import { buildIdeas, instrumentLabel, rankIdeas, repeatLabel, timeAgo, weekSummary, type FeedAccount, type FeedCall, type FeedCaller, type FeedIdea, type FeedRank } from '../../lib/feed'
 import { money, parseHorizon, type Horizon } from '../../lib/scorecard'
 
 export const metadata: Metadata = { title: 'Feed - Called It' }
@@ -34,7 +34,10 @@ export default async function Feed({ searchParams }: { searchParams: Promise<{ h
   const data = API_URL ? await apiGet<FeedData>(`/api/feed?h=${view.horizon}`).catch(() => empty) : empty
   const accounts = new Map(data.accounts.map((account) => [account.handle, account]))
   const summary = weekSummary(data.calls)
-  const ideas = rankIdeas(buildIdeas(data.calls), view.rank)
+  const everyIdea = buildIdeas(data.calls)
+  const ideas = rankIdeas(everyIdea, view.rank)
+  // Tickers that this week mean more than one instrument: their rows say which one they are.
+  const shared = new Set(everyIdea.map((idea) => idea.asset).filter((asset, index, all) => all.indexOf(asset) !== index))
   const now = Date.now()
 
   return (
@@ -66,7 +69,7 @@ export default async function Feed({ searchParams }: { searchParams: Promise<{ h
         {!API_URL ? (
           <div className="empty home-empty"><p>Live data is unavailable in this preview.</p></div>
         ) : ideas.length ? ideas.map((idea, index) => (
-          <Idea key={idea.asset} idea={idea} rank={index + 1} accounts={accounts} prices={data.prices[idea.asset] ?? []} live={data.live?.[idea.asset]} summary={data.summaries?.[idea.asset]} horizon={view.horizon} now={now} />
+          <Idea key={idea.key} idea={idea} rank={index + 1} accounts={accounts} prices={data.prices[idea.key] ?? []} live={data.live?.[idea.key]} summary={data.summaries?.[idea.key]} shared={shared.has(idea.asset)} horizon={view.horizon} now={now} />
         )) : (
           <div className="empty home-empty">
             <p>{summary.calls ? 'Nothing this week fits this ranking.' : 'No calls in the past week yet.'}</p>
@@ -77,7 +80,7 @@ export default async function Feed({ searchParams }: { searchParams: Promise<{ h
   )
 }
 
-function Idea({ idea, rank, accounts, prices, live, summary, horizon, now }: { idea: FeedIdea; rank: number; accounts: Map<string, FeedAccount>; prices: Prices; live?: FeedLive; summary?: string; horizon: Horizon; now: number }) {
+function Idea({ idea, rank, accounts, prices, live, summary, shared, horizon, now }: { idea: FeedIdea; rank: number; accounts: Map<string, FeedAccount>; prices: Prices; live?: FeedLive; summary?: string; shared: boolean; horizon: Horizon; now: number }) {
   const name = (handle: string) => accounts.get(handle)?.name ?? handle
   // Until a summary is written the row quotes its best-placed caller: the one with the best record on this asset.
   const lead = idea.calls.find((call) => call.handle === idea.callers[0].handle) ?? idea.calls[0]
@@ -87,6 +90,7 @@ function Idea({ idea, rank, accounts, prices, live, summary, horizon, now }: { i
       <span className="feed-rank">{rank}</span>
       <div className="feed-idea-top">
         <b className="feed-ticker">{idea.asset}</b>
+        {shared ? <span className="label">{instrumentLabel(idea)}</span> : null}
         <Lean idea={idea} />
         {repeat ? <span className="feed-flag">{repeat}</span> : null}
       </div>

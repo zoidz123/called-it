@@ -1,11 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { buildIdeas, ordinal, rankIdeas, repeatLabel, timeAgo, weekSummary, type FeedCall } from './feed'
+import { buildIdeas, instrumentLabel, ordinal, rankIdeas, repeatLabel, timeAgo, weekSummary, type FeedCall } from './feed'
 
 function call(fields: Partial<FeedCall> = {}): FeedCall {
+  const asset = fields.asset ?? '$MU'
   return {
     tweet_id: '1',
     handle: 'alice',
-    asset: '$MU',
+    asset,
+    asset_class: 'stock',
+    source_id: asset.slice(1),
+    idea: `${asset} stock:${asset.slice(1)}`,
     direction: 'BULL',
     created_at: '2026-10-01T00:00:00.000Z',
     entry_price: 100,
@@ -47,6 +51,15 @@ describe('buildIdeas', () => {
     expect(idea.firstCallAt).toBe('2026-10-01T00:00:00.000Z')
     expect(idea.latestCallAt).toBe('2026-10-03T00:00:00.000Z')
     expect(idea.since).toBeCloseTo(0.01)
+  })
+
+  test('keeps a ticker two accounts mean differently as two rows', () => {
+    const token = { asset: '$HUMA', asset_class: 'crypto' as const, source_id: 'gt:bsc:0xpool:0xtoken', idea: '$HUMA crypto:gt:bsc:0xpool:0xtoken' }
+    const ideas = buildIdeas([call({ handle: 'alice', asset: '$HUMA' }), call({ handle: 'bob', ...token })])
+    expect(ideas.map((item) => [item.asset, item.callers.map((caller) => caller.handle), instrumentLabel(item)])).toEqual([
+      ['$HUMA', ['alice'], 'stock'],
+      ['$HUMA', ['bob'], 'token on bsc'],
+    ])
   })
 
   test('takes where an account stands from its latest call and its record from before the week', () => {

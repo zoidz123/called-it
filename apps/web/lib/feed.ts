@@ -3,6 +3,11 @@ export type FeedCall = {
   tweet_id: string
   handle: string
   asset: string
+  // The instrument this account's calls on the asset are priced against, and the feed row that puts the call in:
+  // the ticker as that instrument. Accounts can mean different instruments by one ticker.
+  asset_class: 'crypto' | 'stock'
+  source_id: string
+  idea: string
   direction: 'BULL' | 'BEAR'
   created_at: string
   entry_price: number
@@ -31,9 +36,12 @@ export type FeedCaller = {
   avgReturn: number | null
 }
 
-// One asset and everything the tracked accounts said about it this week.
+// One asset, as one instrument, and everything the tracked accounts said about it this week.
 export type FeedIdea = {
+  key: string
   asset: string
+  assetClass: 'crypto' | 'stock'
+  sourceId: string
   // Best record on the asset first; accounts with no settled calls on it last, longest history first.
   callers: FeedCaller[]
   bulls: number
@@ -61,12 +69,14 @@ export function repeatLabel(call: FeedCall) {
 
 const record = (caller: FeedCaller) => caller.avgReturn ?? Number.NEGATIVE_INFINITY
 
-// Groups the week's calls by asset. `calls` must be newest first.
+// Groups the week's calls by the instrument they are priced against, so a ticker two accounts mean differently
+// makes two rows. `calls` must be newest first.
 export function buildIdeas(calls: FeedCall[]): FeedIdea[] {
-  const byAsset = new Map<string, FeedCall[]>()
-  for (const call of calls) byAsset.set(call.asset, [...(byAsset.get(call.asset) ?? []), call])
+  const byIdea = new Map<string, FeedCall[]>()
+  for (const call of calls) byIdea.set(call.idea, [...(byIdea.get(call.idea) ?? []), call])
 
-  return [...byAsset.entries()].map(([asset, assetCalls]) => {
+  return [...byIdea.entries()].map(([key, assetCalls]) => {
+    const { asset, asset_class: assetClass, source_id: sourceId } = assetCalls[0]
     const byHandle = new Map<string, FeedCall[]>()
     for (const call of assetCalls) byHandle.set(call.handle, [...(byHandle.get(call.handle) ?? []), call])
     const callers = [...byHandle.entries()].map(([handle, own]): FeedCaller => {
@@ -76,7 +86,10 @@ export function buildIdeas(calls: FeedCall[]): FeedIdea[] {
     }).sort((a, b) => record(b) - record(a) || b.prior - a.prior || a.handle.localeCompare(b.handle))
     const bulls = callers.filter((caller) => caller.direction === 'BULL').length
     return {
+      key,
       asset,
+      assetClass,
+      sourceId,
       callers,
       bulls,
       bears: callers.length - bulls,
@@ -109,6 +122,12 @@ export function rankIdeas(ideas: FeedIdea[], rank: FeedRank): FeedIdea[] {
   }
   if (rank === 'contested') return ideas.filter((idea) => idea.bulls > 0 && idea.bears > 0).sort(byCalled)
   return [...ideas].sort(byCalled)
+}
+
+// What kind of instrument a row is, for telling apart two rows that share a ticker.
+export function instrumentLabel(idea: Pick<FeedIdea, 'assetClass' | 'sourceId'>) {
+  if (idea.sourceId.startsWith('gt:')) return `token on ${idea.sourceId.split(':')[1]}`
+  return idea.assetClass === 'crypto' ? 'crypto' : 'stock'
 }
 
 export function weekSummary(calls: FeedCall[]) {
