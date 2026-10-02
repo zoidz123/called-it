@@ -8,7 +8,6 @@ import { buildAssetRows, formatDate, HORIZONS, money, parseHorizon, recentResult
 import { HoldControl, HoldQuestion } from '../../../components/HoldSentence'
 import { ResultCurve } from '../../../components/ResultCurve'
 import { Streak } from '../../../components/Streak'
-import { getSiteUrl } from '../../../lib/site'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,15 +77,6 @@ async function loadScorecard(handle: string) {
 // The one-glance answer: what following this account's calls returned at this horizon.
 function ProfileHead({ data, horizon }: { data: Scorecard; horizon: Horizon }) {
   const { user } = data
-  const profileUrl = new URL(`/u/${encodeURIComponent(user.handle)}`, getSiteUrl()).toString()
-  const imageUrl = `/u/${encodeURIComponent(user.handle)}/opengraph-image?v=${shareImageVersion(data)}`
-  const shareCalls = user.calls_30d ?? 0
-  const shareWins = Math.round((user.hit_rate_30d ?? 0) * shareCalls)
-  const shareText = [
-    `${user.name}'s Called It scorecard`,
-    shareCalls > 0 ? `$1,000 into each call became ${money(user.avg_return_30d ?? 0)} 30 days later · ${shareWins}-${shareCalls - shareWins} record` : null,
-  ].filter(Boolean).join('\n')
-  const xShareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(profileUrl)}`
   const calls = user[`calls_${horizon}d`] ?? 0
   const wins = Math.round((user[`hit_rate_${horizon}d`] ?? 0) * calls)
   const avg = user[`avg_return_${horizon}d`] ?? 0
@@ -100,10 +90,6 @@ function ProfileHead({ data, horizon }: { data: Scorecard; horizon: Horizon }) {
         <div>
           <h1>{user.name}</h1>
           <p>@{user.handle} · {formatNumber(user.followers)} followers</p>
-        </div>
-        <div className="share-image-actions">
-          <a href={xShareUrl} target="_blank" rel="noreferrer">Share on X</a>
-          <a className="share-image-action-secondary" href={imageUrl} download={`called-it-${user.handle}-scorecard-2x.png`}>Download image</a>
         </div>
       </div>
       <div className="profile-hold">
