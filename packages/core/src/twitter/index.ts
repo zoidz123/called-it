@@ -12,6 +12,9 @@ const CREDIT_COOLDOWN_MS = 60 * 60 * 1000
 const MAX_KEY_WAIT_MS = 60 * 1000
 const SPLIT_DURATIONS_MS = [24 * 60 * 60 * 1000, 6 * 60 * 60 * 1000, 60 * 60 * 1000]
 const DEFAULT_DENSE_PROBE_PAGES = 4
+// A search query has a length limit, so a long list of accounts is asked for in several queries.
+const MAX_AUTHORS_QUERY_CHARS = 400
+const MAX_AUTHORS_PAGES = 25
 
 export function parseXHandle(input: string): string {
   const trimmed = String(input ?? '').trim()
@@ -88,6 +91,58 @@ export async function getAuthorTimeline(
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 }
 
+// New original posts by any of `handles` since `since`, keyed by handle. One search covers many accounts, so the cost
+// is the posts that come back and not a request per account.
+export async function getPostsSince(handles: string[], since: Date): Promise<Map<string, Tweet[]>> {
+  const posts = new Map<string, Tweet[]>(handles.map((handle) => [handle.toLowerCase(), []]))
+  for (const group of authorGroups([...posts.keys()])) {
+    const query = authorsQuery(group, since)
+    let cursor: string | undefined
+    for (let page = 0; page < MAX_AUTHORS_PAGES; page += 1) {
+      const payload = await callTwitterApi('/twitter/tweet/advanced_search', { query, queryType: 'Latest', cursor })
+      for (const [handle, tweets] of postsByAuthor(payload, group)) posts.get(handle)?.push(...tweets)
+      // The search can hand back a cursor after its last post, so an empty page ends the read too.
+      cursor = rawTweets(payload).length ? nextCursor(payload) : undefined
+      if (!cursor) break
+    }
+    if (cursor) console.warn(`twitter: more than ${MAX_AUTHORS_PAGES} pages of new posts for one query; the rest are left for the next read`)
+  }
+  for (const [handle, tweets] of posts) posts.set(handle, dedupeTweets(tweets))
+  return posts
+}
+
+// Splits handles into groups whose combined search query stays under the length limit.
+export function authorGroups(handles: string[], maxChars = MAX_AUTHORS_QUERY_CHARS): string[][] {
+  const groups: string[][] = []
+  let length = 0
+  for (const handle of handles) {
+    const cost = `from:${handle} OR `.length
+    if (!groups.length || length + cost > maxChars) {
+      groups.push([])
+      length = 0
+    }
+    groups[groups.length - 1].push(handle)
+    length += cost
+  }
+  return groups
+}
+
+export function authorsQuery(handles: string[], since: Date) {
+  return `(${handles.map((handle) => `from:${handle}`).join(' OR ')}) -is:retweet -is:reply since_time:${unix(since)}`
+}
+
+// The posts on one search page, by the account that wrote each. A post by anyone outside `handles` is dropped.
+export function postsByAuthor(payload: any, handles: string[]): Map<string, Tweet[]> {
+  const wanted = new Set(handles.map((handle) => handle.toLowerCase()))
+  const posts = new Map<string, Tweet[]>()
+  for (const raw of rawTweets(payload)) {
+    const author = String(raw?.author?.userName ?? raw?.author?.username ?? raw?.user?.screen_name ?? '').toLowerCase()
+    const tweet = wanted.has(author) ? normalizeTweet(raw, author) : null
+    if (tweet) posts.set(author, [...(posts.get(author) ?? []), tweet])
+  }
+  return posts
+}
+
 export function candidatesFromTweets(tweets: Tweet[]): TweetCandidate[] {
   return tweets
     .map((tweet) => ({ ...tweet, text: tidy(tweet.text), assets: extractCashtags(tweet.text) }))
@@ -146,20 +201,29 @@ async function getAuthorSearchPage(handle: string, { window, nextToken }: { wind
 }
 
 function normalizeSearchPayload(payload: any, handle: string): SearchPayload {
+  const tweets = rawTweets(payload).flatMap((raw) => normalizeTweet(raw, handle) ?? [])
+  return { tweets, nextToken: nextCursor(payload) }
+}
+
+function rawTweets(payload: any): any[] {
   const arr = payload?.tweets ?? payload?.data ?? payload?.results ?? []
-  const tweets = (Array.isArray(arr) ? arr : [])
-    .map((tweet: any) => {
-      const id = String(tweet.id ?? tweet.id_str ?? tweet.tweet_id ?? '')
-      return {
-        id,
-        text: String(tweet.text ?? tweet.full_text ?? tweet.content ?? ''),
-        createdAt: String(tweet.createdAt ?? tweet.created_at ?? tweet.created ?? ''),
-        url: `https://x.com/${handle}/status/${id}`,
-      }
-    })
-    .filter((tweet: Tweet) => tweet.id && tweet.text && tweet.createdAt)
+  return Array.isArray(arr) ? arr : []
+}
+
+function normalizeTweet(tweet: any, handle: string): Tweet | null {
+  const id = String(tweet.id ?? tweet.id_str ?? tweet.tweet_id ?? '')
+  const normalized = {
+    id,
+    text: String(tweet.text ?? tweet.full_text ?? tweet.content ?? ''),
+    createdAt: String(tweet.createdAt ?? tweet.created_at ?? tweet.created ?? ''),
+    url: `https://x.com/${handle}/status/${id}`,
+  }
+  return normalized.id && normalized.text && normalized.createdAt ? normalized : null
+}
+
+function nextCursor(payload: any): string | undefined {
   const rawCursor = payload?.next_cursor ?? payload?.meta?.next_token ?? payload?.next_token ?? payload?.cursor
-  return { tweets, nextToken: rawCursor && String(rawCursor) !== '0' ? String(rawCursor) : undefined }
+  return rawCursor && String(rawCursor) !== '0' ? String(rawCursor) : undefined
 }
 
 function buildWindows({ start, end, daysPerWindow }: { start: Date; end: Date; daysPerWindow: number }): Window[] {

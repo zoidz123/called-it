@@ -130,7 +130,7 @@ async function getFullScanRefreshState(handle: string) {
   }
 }
 
-async function hasRecentRefreshJob(handle: string, jobType: 'full_scan' | 'price_refresh') {
+export async function hasRecentRefreshJob(handle: string, jobType: 'full_scan' | 'price_refresh') {
   const { rows } = await query(
     `SELECT id FROM scan_jobs
      WHERE lower(handle) = lower($1)
@@ -391,6 +391,23 @@ export async function getSettledCallouts(handle: string) {
     [handle],
   )
   return rows.map(serializeRow)
+}
+
+// Every account with a scorecard, in the scanner's profile shape, with when its posts were last read.
+export async function getTrackedAccounts() {
+  const { rows } = await query(
+    `SELECT handle, x_id, name, avatar_url, bio, followers, verified, last_scanned_at
+     FROM users WHERE last_scanned_at IS NOT NULL ORDER BY handle`,
+  )
+  return rows.map(serializeRow).map((row: any) => ({
+    user: { id: row.x_id, handle: row.handle, name: row.name, avatarUrl: row.avatar_url, bio: row.bio, followers: row.followers, verified: row.verified } satisfies XUser,
+    lastScannedAt: row.last_scanned_at as string,
+  }))
+}
+
+// Records that these accounts' posts have been read up to `at`.
+export async function markScanned(handles: string[], at: string) {
+  await query(`UPDATE users SET last_scanned_at = $2 WHERE handle = ANY($1::text[]) AND last_scanned_at < $2`, [handles, at])
 }
 
 export async function getLastScannedAt(handle: string): Promise<string | null> {

@@ -142,7 +142,7 @@ async function processFullScanJob(job: any) {
 }
 
 // The instrument each of a handle's assets was priced against at its last scan.
-async function storedInstruments(handle: string) {
+export async function storedInstruments(handle: string) {
   const sources = await getStoredAssetSources(handle)
   return new Map(sources.map((row: any): [string, ResolvedAsset] => [row.asset, {
     symbol: row.asset,
@@ -153,7 +153,7 @@ async function storedInstruments(handle: string) {
   }]))
 }
 
-async function settledCallouts(handle: string) {
+export async function settledCallouts(handle: string) {
   const rows = await getSettledCallouts(handle)
   return new Map(rows.map((row: any): [string, SettledCallout] => [settledKey(row.tweet_id, row.asset, row.direction), {
     entryPrice: row.entry_price,

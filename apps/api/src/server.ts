@@ -15,6 +15,7 @@ import {
   saveFeedSummary,
 } from '@called-it/db'
 import { dayKey, directionalReturn, getDailyBars, getLiveMids, getXUser, liveQuote, loadLocalEnv, mapWithConcurrency, parseXHandle, summariesAreConfigured, summarizeIdea, type Bar, type SummaryPost } from '@called-it/core'
+import { startPollLoop } from './poller'
 import { startWorkerLoop } from './worker'
 import { corsOrigin, scanIsConfigured } from './config'
 
@@ -344,11 +345,14 @@ function normalizeOptionalText(value: unknown, maxLength: number) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const app = await buildServer()
   const worker = process.env.SCAN_WORKER_ENABLED === 'false' ? null : startWorkerLoop()
+  // New posts are read by the same process that scans, so an API without a worker does not read them either.
+  const poller = worker ? startPollLoop() : null
   try {
     await app.listen({ port: PORT, host: '0.0.0.0' })
     console.log(`Called It API listening on http://localhost:${PORT}`)
   } catch (error) {
     worker?.stop()
+    poller?.stop()
     throw error
   }
 }
