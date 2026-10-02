@@ -1,4 +1,7 @@
-import { query } from './client'
+import { withTransaction } from './client'
+
+// Any fixed number: it names the lock that keeps two processes from migrating at once.
+const MIGRATION_LOCK = 81520261002
 
 const statements = [
   `CREATE EXTENSION IF NOT EXISTS pgcrypto`,
@@ -177,6 +180,27 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS idx_call_tweets_handle_asset ON call_tweets(handle, asset)`,
   `CREATE INDEX IF NOT EXISTS idx_asset_feedback_created ON asset_feedback(created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_asset_feedback_handle_asset ON asset_feedback(lower(handle), asset)`,
+  // Price histories, shared by every account that calls an instrument. A history is kept a month to a row.
+  `CREATE TABLE IF NOT EXISTS price_series (
+    series TEXT NOT NULL,
+    interval TEXT NOT NULL,
+    from_ms BIGINT NOT NULL,
+    fetched_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (series, interval)
+  )`,
+  `CREATE TABLE IF NOT EXISTS price_chunks (
+    series TEXT NOT NULL,
+    interval TEXT NOT NULL,
+    month TEXT NOT NULL,
+    bars JSONB NOT NULL,
+    PRIMARY KEY (series, interval, month)
+  )`,
+  // What the stock and token searches found for a ticker.
+  `CREATE TABLE IF NOT EXISTS ticker_searches (
+    ticker TEXT PRIMARY KEY,
+    found JSONB NOT NULL,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
   // Who asked for a scan, as a hash of their address, so each visitor's scans in a day can be counted.
   `ALTER TABLE scan_jobs ADD COLUMN IF NOT EXISTS requested_by TEXT`,
   // The registry: every instrument a ticker has been priced against, with what it is. One ticker can have several.
@@ -216,8 +240,12 @@ const statements = [
    ON CONFLICT DO NOTHING`,
 ]
 
+// Runs as one transaction behind a lock, so two processes starting together do not both try to create a table.
 export async function migrate() {
-  for (const statement of statements) await query(statement)
+  await withTransaction(async (client) => {
+    await client.query(`SELECT pg_advisory_xact_lock($1)`, [MIGRATION_LOCK])
+    for (const statement of statements) await client.query(statement)
+  })
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

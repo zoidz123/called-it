@@ -1,4 +1,5 @@
 import { optionalEnv } from '../env'
+import { timedFetch } from '../http'
 import { getLiveMids, onchainSource } from '../pricing'
 import { spacedQueue } from '../spaced'
 import { askJev } from '../typesafe'
@@ -16,7 +17,7 @@ export type AssetContext = {
   }[]
 }
 
-type AssetCandidate = {
+export type AssetCandidate = {
   provider: Provider
   symbol: string
   assetClass: AssetClass
@@ -105,7 +106,23 @@ const COMMON_ASSETS: Record<string, Omit<ResolvedAsset, 'symbol' | 'sourceId'> &
 }
 
 const yahooSearchCache = new Map<string, Promise<AssetCandidate[]>>()
-let hyperliquidMidsPromise: Promise<Record<string, string>> | null = null
+let hyperliquidMids: { at: number; mids: Promise<Record<string, string>> } | null = null
+// Which coins Hyperliquid lists changes rarely, but it does change, and a failed request must not be kept.
+const HYPERLIQUID_LISTING_TTL_MS = 10 * 60 * 1000
+
+// What the searches found for a ticker: stock listings and on-chain pools.
+export type TickerSearch = { yahoo: AssetCandidate[]; pools: AssetCandidate[]; fetchedAt: number }
+// Where ticker searches are kept between runs, so the same ticker is not searched for again for every account.
+export type CandidateStore = {
+  load(ticker: string): Promise<TickerSearch | null>
+  save(ticker: string, search: TickerSearch): Promise<void>
+}
+const SEARCH_TTL_MS = 24 * 60 * 60 * 1000
+let candidateStore: CandidateStore | null = null
+
+export function useCandidateStore(store: CandidateStore | null) {
+  candidateStore = store
+}
 const onchainSearchCache = new Map<string, Promise<AssetCandidate[]>>()
 // DexScreener allows 300 searches a minute; a first scan can ask about hundreds of tickers at once.
 const dexQueue = spacedQueue(220)
@@ -179,7 +196,7 @@ function equity(name: string, sourceId?: string) {
 }
 
 async function getCandidates(raw: string, context?: AssetContext, known?: ResolvedAsset): Promise<AssetCandidate[]> {
-  const [yahoo, hyperliquid, pools] = await Promise.all([yahooSearch(raw), hyperliquidCandidate(raw), onchainSearch(raw)])
+  const [{ yahoo, pools }, hyperliquid] = await Promise.all([searchTicker(raw), hyperliquidCandidate(raw)])
   // A token that is the listed company's stock in tokenized form is not a separate instrument: the exchange listing
   // stays the one that is priced.
   const listed = yahoo.find((candidate) => cleanSymbol(candidate.symbol) === raw)
@@ -197,6 +214,18 @@ async function getCandidates(raw: string, context?: AssetContext, known?: Resolv
 }
 
 type OnchainCandidate = AssetCandidate & { pinned?: boolean }
+
+// The stock listings and on-chain pools for a ticker, from the store when it was searched for in the past day.
+async function searchTicker(raw: string): Promise<Pick<TickerSearch, 'yahoo' | 'pools'>> {
+  const stored = (await candidateStore?.load(raw).catch(() => null)) ?? null
+  if (stored && Date.now() - stored.fetchedAt < SEARCH_TTL_MS) return stored
+  const [yahoo, pools] = await Promise.all([yahooSearch(raw), onchainSearch(raw)])
+  // Finding nothing at all is as likely a failed search as an unknown ticker, so it is not kept.
+  if (yahoo.length || pools.length) {
+    await candidateStore?.save(raw, { yahoo, pools, fetchedAt: Date.now() }).catch(() => {})
+  }
+  return { yahoo, pools }
+}
 
 // What the registry already holds for a batch of tickers: each one's default instrument across accounts, and the
 // on-chain token it has been priced as, if any.
@@ -221,7 +250,7 @@ async function onchainSearch(raw: string): Promise<AssetCandidate[]> {
 // Every pool DexScreener lists for a token with exactly this symbol, thick enough to mean something.
 async function fetchOnchainSearch(raw: string): Promise<AssetCandidate[]> {
   try {
-    const response = await dexQueue(() => fetch(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(raw)}`))
+    const response = await dexQueue(() => timedFetch(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(raw)}`))
     if (!response.ok) throw new Error(`DexScreener search ${response.status}`)
     const json = await response.json()
     return (json.pairs ?? [])
@@ -277,7 +306,7 @@ async function yahooSearch(raw: string): Promise<AssetCandidate[]> {
 async function fetchYahooSearch(raw: string): Promise<AssetCandidate[]> {
   try {
     const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(raw)}&quotesCount=8&newsCount=0&enableFuzzyQuery=false`
-    const response = await yahooQueue(() => fetch(url, { headers: yahooHeaders() }))
+    const response = await yahooQueue(() => timedFetch(url, { headers: yahooHeaders() }))
     if (!response.ok) throw new Error(`Yahoo search ${response.status}`)
     const json = await response.json()
     return (json.quotes ?? [])
@@ -319,8 +348,8 @@ async function hyperliquidCandidate(raw: string): Promise<AssetCandidate[]> {
 }
 
 async function getHyperliquidMids() {
-  if (!hyperliquidMidsPromise) {
-    hyperliquidMidsPromise = fetch('https://api.hyperliquid.xyz/info', {
+  if (!hyperliquidMids || Date.now() - hyperliquidMids.at > HYPERLIQUID_LISTING_TTL_MS) {
+    const mids = timedFetch('https://api.hyperliquid.xyz/info', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'allMids' }),
@@ -328,8 +357,10 @@ async function getHyperliquidMids() {
       if (!response.ok) throw new Error(`Hyperliquid mids ${response.status}`)
       return response.json()
     })
+    hyperliquidMids = { at: Date.now(), mids }
+    mids.catch(() => { if (hyperliquidMids?.mids === mids) hyperliquidMids = null })
   }
-  return hyperliquidMidsPromise
+  return hyperliquidMids.mids
 }
 
 // Settles a ticker without reading the posts when only one venue knows it, or when the posts quote a token's
@@ -394,7 +425,7 @@ async function withPrices(raw: string, candidates: AssetCandidate[], mids: Recor
 
 async function yahooPrice(symbol: string): Promise<number | undefined> {
   try {
-    const response = await yahooQueue(() => fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`, { headers: yahooHeaders() }))
+    const response = await yahooQueue(() => timedFetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`, { headers: yahooHeaders() }))
     if (!response.ok) return undefined
     const price = Number((await response.json()).chart?.result?.[0]?.meta?.regularMarketPrice)
     return Number.isFinite(price) && price > 0 ? price : undefined

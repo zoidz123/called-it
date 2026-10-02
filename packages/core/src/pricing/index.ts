@@ -1,4 +1,5 @@
 import { optionalEnv } from '../env'
+import { timedFetch } from '../http'
 import { spacedQueue } from '../spaced'
 import { HORIZON_DAYS, type AssetClass, type HorizonPrices, type PricePoint, type ResolvedAsset } from '../types'
 
@@ -15,16 +16,38 @@ export type Bar = { t: number; end: number; open: number; high: number; low: num
 // `bars` are hourly where the venue still serves them and daily before that, oldest first.
 export type PriceSeries = { bars: Bar[]; current: PricePoint }
 
+type Interval = '1d' | '1h'
+// A price history as it is kept between runs. `from` is how far back it was asked to reach, which can be earlier
+// than its first bar when the instrument is younger than that.
+export type StoredSeries = { bars: Bar[]; from: number; fetchedAt: number }
+// Where price histories are kept, one per instrument and interval, shared by every account that calls it.
+export type PriceStore = {
+  load(series: string, interval: Interval): Promise<StoredSeries | null>
+  // `changedFrom` is the open time of the earliest bar that differs from what was stored; zero replaces it all.
+  save(series: string, interval: Interval, stored: StoredSeries, changedFrom: number): Promise<void>
+}
+
+// A stored history this recent is used as it is, with no request to the venue.
+const STORE_TTL_MS = 30 * 60 * 1000
+let priceStore: PriceStore | null = null
+// One load at a time per history, so two accounts scored together fetch a shared instrument once.
+const loading = new Map<string, Promise<unknown>>()
+
+export function usePriceStore(store: PriceStore | null) {
+  priceStore = store
+}
+
+export function seriesKey(asset: Pick<ResolvedAsset, 'assetClass' | 'sourceId'>) {
+  return `${asset.assetClass}:${asset.sourceId}`
+}
+
 export async function getPriceSeries(asset: ResolvedAsset, from: string): Promise<PriceSeries | null> {
   try {
-    if (isOnchainSource(asset.sourceId)) return await geckoSeries(asset.sourceId)
-    return asset.provider === 'hyperliquid' || asset.assetClass === 'crypto'
-      ? await hyperliquidSeries(cleanSymbol(asset.sourceId), from)
-      : await yahooSeries(asset.sourceId, from)
+    return await loadSeries(asset, from)
   } catch (error) {
     if (cleanSymbol(asset.sourceId) === 'XYZ100') {
       try {
-        return await yahooSeries('QQQ', from)
+        return await loadSeries({ symbol: asset.symbol, assetClass: 'stock', sourceId: 'QQQ', name: null, provider: 'yahoo' }, from)
       } catch {
         // Fall through to the normal debug log and null return.
       }
@@ -34,6 +57,74 @@ export async function getPriceSeries(asset: ResolvedAsset, from: string): Promis
     }
     return null
   }
+}
+
+// Whether an instrument's history can be read without asking its venue: it is stored, and recent.
+export async function hasFreshSeries(asset: ResolvedAsset) {
+  const stored = await priceStore?.load(seriesKey(asset), '1d').catch(() => null)
+  return Boolean(stored && Date.now() - stored.fetchedAt < STORE_TTL_MS)
+}
+
+function venueOf(asset: ResolvedAsset): 'geckoterminal' | 'hyperliquid' | 'yahoo' {
+  if (isOnchainSource(asset.sourceId)) return 'geckoterminal'
+  return asset.provider === 'hyperliquid' || asset.assetClass === 'crypto' ? 'hyperliquid' : 'yahoo'
+}
+
+// How far back a history must reach for calls from `from` on: ten days of lead, so a call has a price before it.
+// A pool's history is always asked for whole.
+function seriesStart(asset: ResolvedAsset, from: string) {
+  return venueOf(asset) === 'geckoterminal' ? 0 : Date.parse(`${dayKey(from)}T00:00:00.000Z`) - 10 * DAY_MS
+}
+
+async function loadSeries(asset: ResolvedAsset, from: string): Promise<PriceSeries> {
+  const start = seriesStart(asset, from)
+  const daily = await loadBars(asset, '1d', start)
+  const last = daily.at(-1)
+  if (!last) throw new Error(`${seriesKey(asset)} history missing`)
+  const hourly = await loadBars(asset, '1h', start).catch(() => [])
+  const latest = hourly.at(-1) ?? last
+  // A stock's last bar says when it traded. A venue that never shuts has its last candle still forming, so its
+  // close is the price now.
+  const pricedAt = venueOf(asset) === 'yahoo' ? new Date(latest.t).toISOString() : new Date().toISOString()
+  return { bars: mergeBars(daily, hourly), current: { price: latest.close, pricedAt } }
+}
+
+function loadBars(asset: ResolvedAsset, interval: Interval, start: number): Promise<Bar[]> {
+  const key = `${seriesKey(asset)}|${interval}`
+  const run = (loading.get(key) ?? Promise.resolve()).catch(() => {}).then(() => readBars(asset, interval, start))
+  loading.set(key, run)
+  run.finally(() => { if (loading.get(key) === run) loading.delete(key) }).catch(() => {})
+  return run
+}
+
+// The stored history when it is recent and reaches back far enough. Otherwise the venue is asked only for what is
+// new since the last stored bar, or for the whole stretch when the store does not reach back that far.
+async function readBars(asset: ResolvedAsset, interval: Interval, start: number): Promise<Bar[]> {
+  const series = seriesKey(asset)
+  const stored = (await priceStore?.load(series, interval).catch(() => null)) ?? null
+  const covers = stored !== null && stored.from <= start
+  if (covers && Date.now() - stored.fetchedAt < STORE_TTL_MS) return stored.bars
+  try {
+    // The last stored bar was still forming when it was saved, so it is fetched again.
+    const since = covers && stored.bars.length ? stored.bars[stored.bars.length - 1].t : start
+    const fresh = await fetchBars(asset, interval, since)
+    const bars = covers ? [...stored.bars.filter((bar) => !fresh.length || bar.t < fresh[0].t), ...fresh] : fresh
+    await priceStore?.save(series, interval, { bars, from: covers ? stored.from : start, fetchedAt: Date.now() }, covers ? fresh[0]?.t ?? since : 0)
+      .catch((error) => console.error(`could not store prices for ${series}`, error))
+    return bars
+  } catch (error) {
+    // A venue that does not answer leaves the stored history in use: a little old beats none.
+    if (covers) return stored.bars
+    throw error
+  }
+}
+
+function fetchBars(asset: ResolvedAsset, interval: Interval, start: number): Promise<Bar[]> {
+  const span = interval === '1d' ? DAY_MS : HOUR_MS
+  const venue = venueOf(asset)
+  if (venue === 'geckoterminal') return geckoBars(asset.sourceId, interval === '1d' ? 'day' : 'hour', span)
+  if (venue === 'hyperliquid') return hyperliquidBars(cleanSymbol(asset.sourceId), start, interval, span)
+  return yahooBars(asset.sourceId, interval === '1h' ? Math.max(start, Date.now() - YAHOO_HOURLY_DAYS * DAY_MS) : start, interval)
 }
 
 // Hyperliquid's venue for stocks, indices and commodities. Its coins are named "xyz:TICKER".
@@ -75,13 +166,8 @@ export function liveQuote(
 
 // Daily candles only, for a chart. Scoring uses getPriceSeries, which also pulls hourly bars.
 export async function getDailyBars(asset: ResolvedAsset, from: string): Promise<Bar[]> {
-  if (isOnchainSource(asset.sourceId)) {
-    const start = new Date(from).getTime() - 10 * DAY_MS
-    return (await geckoBars(asset.sourceId, 'day', DAY_MS)).filter((bar) => bar.end > start)
-  }
-  return asset.provider === 'hyperliquid' || asset.assetClass === 'crypto'
-    ? hyperliquidBars(cleanSymbol(asset.sourceId), Date.parse(`${dayKey(from)}T00:00:00.000Z`) - 10 * DAY_MS, '1d', DAY_MS)
-    : yahooBars(asset.sourceId, new Date(from).getTime() - 10 * DAY_MS, '1d')
+  const start = new Date(from).getTime() - 10 * DAY_MS
+  return (await loadBars(asset, '1d', seriesStart(asset, from))).filter((bar) => bar.end > start)
 }
 
 // What a follower could have got: the first price after the post, and the last price at each horizon after that entry.
@@ -123,21 +209,9 @@ function mergeBars(daily: Bar[], hourly: Bar[]): Bar[] {
   return [...daily.filter((bar) => bar.end <= hourly[0].t), ...hourly]
 }
 
-async function yahooSeries(symbol: string, from: string): Promise<PriceSeries> {
-  const start = new Date(from).getTime() - 10 * DAY_MS
-  const daily = await yahooBars(symbol, start, '1d')
-  const last = daily.at(-1)
-  if (!last) throw new Error(`Yahoo ${symbol} history missing`)
-  const hourly = await yahooBars(symbol, Math.max(start, Date.now() - YAHOO_HOURLY_DAYS * DAY_MS), '1h').catch(() => [])
-  return {
-    bars: mergeBars(daily, hourly),
-    current: { price: (hourly.at(-1) ?? last).close, pricedAt: new Date((hourly.at(-1) ?? last).t).toISOString() },
-  }
-}
-
 async function yahooBars(symbol: string, start: number, interval: '1d' | '1h'): Promise<Bar[]> {
   const end = Date.now() + DAY_MS
-  const response = await fetch(
+  const response = await timedFetch(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${Math.floor(start / 1000)}&period2=${Math.floor(end / 1000)}&interval=${interval}&includePrePost=true&events=history`,
     { headers: yahooHeaders() },
   )
@@ -171,19 +245,6 @@ async function yahooBars(symbol: string, start: number, interval: '1d' | '1h'): 
       close: row.close,
     }
   })
-}
-
-async function hyperliquidSeries(symbol: string, from: string): Promise<PriceSeries> {
-  const start = Date.parse(`${dayKey(from)}T00:00:00.000Z`)
-  const daily = await hyperliquidBars(symbol, start, '1d', DAY_MS)
-  const last = daily.at(-1)
-  if (!last) throw new Error(`Hyperliquid ${symbol} history missing`)
-  const hourly = await hyperliquidBars(symbol, start, '1h', HOUR_MS).catch(() => [])
-  // The last candle is still forming, so its close is the live price.
-  return {
-    bars: mergeBars(daily, hourly),
-    current: { price: (hourly.at(-1) ?? last).close, pricedAt: new Date().toISOString() },
-  }
 }
 
 async function hyperliquidBars(symbol: string, start: number, interval: '1d' | '1h', span: number): Promise<Bar[]> {
@@ -220,18 +281,6 @@ export function isOnchainSource(sourceId: string) {
   return sourceId.startsWith(ONCHAIN_PREFIX)
 }
 
-async function geckoSeries(sourceId: string): Promise<PriceSeries> {
-  const daily = await geckoBars(sourceId, 'day', DAY_MS)
-  const last = daily.at(-1)
-  if (!last) throw new Error(`GeckoTerminal ${sourceId} history missing`)
-  const hourly = await geckoBars(sourceId, 'hour', HOUR_MS).catch(() => [])
-  // The last candle is still forming, so its close is the live price.
-  return {
-    bars: mergeBars(daily, hourly),
-    current: { price: (hourly.at(-1) ?? last).close, pricedAt: new Date().toISOString() },
-  }
-}
-
 // The pool's latest 1000 candles, oldest first: its whole life in days, about six weeks in hours.
 async function geckoBars(sourceId: string, timeframe: 'day' | 'hour', span: number): Promise<Bar[]> {
   const [network, pool, token] = sourceId.slice(ONCHAIN_PREFIX.length).split(':')
@@ -247,7 +296,7 @@ async function geckoBars(sourceId: string, timeframe: 'day' | 'hour', span: numb
 function geckoGet(url: string): Promise<any> {
   return geckoQueue(async () => {
     for (let attempt = 0; ; attempt++) {
-      const response = await fetch(url, { headers: { accept: 'application/json' } })
+      const response = await timedFetch(url, { headers: { accept: 'application/json' } })
       if (response.status === 429 && attempt < GECKO_BACKOFF_MS.length) {
         await new Promise((done) => setTimeout(done, GECKO_BACKOFF_MS[attempt]))
         continue
@@ -259,7 +308,7 @@ function geckoGet(url: string): Promise<any> {
 }
 
 async function hyperliquidInfo(body: Record<string, unknown>) {
-  const response = await fetch('https://api.hyperliquid.xyz/info', {
+  const response = await timedFetch('https://api.hyperliquid.xyz/info', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

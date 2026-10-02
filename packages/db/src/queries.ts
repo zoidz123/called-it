@@ -96,13 +96,27 @@ export async function findActiveScanJob(handle: string, jobType?: 'full_scan' | 
   return rows[0] ? serializeRow(rows[0]) : null
 }
 
+// A running job reports in every half minute. One that has been silent this long lost its worker, usually to a
+// restart, and is picked up again.
+const JOB_SILENT_MINUTES = 3
+// A job that keeps losing its worker is given up on after this long, so it cannot be retried for ever.
+const JOB_GIVE_UP_MINUTES = 30
+
 export async function claimNextScanJob(workerId: string) {
   return withTransaction(async (client) => {
+    await client.query(
+      `UPDATE scan_jobs
+       SET status = 'error', stage = 'error', progress_message = 'Scan failed', error = 'Interrupted before it finished', finished_at = now()
+       WHERE status = 'running' AND locked_at < now() - ($1::int * interval '1 minute')
+         AND started_at < now() - ($2::int * interval '1 minute')`,
+      [JOB_SILENT_MINUTES, JOB_GIVE_UP_MINUTES],
+    )
     const { rows } = await client.query(
       `SELECT * FROM scan_jobs
-       WHERE status = 'pending'
+       WHERE status = 'pending' OR (status = 'running' AND locked_at < now() - ($1::int * interval '1 minute'))
        ORDER BY CASE WHEN job_type = 'full_scan' THEN 0 ELSE 1 END, created_at ASC
        LIMIT 1 FOR UPDATE SKIP LOCKED`,
+      [JOB_SILENT_MINUTES],
     )
     if (!rows[0]) return null
     const updated = await client.query(
@@ -115,6 +129,26 @@ export async function claimNextScanJob(workerId: string) {
     )
     return serializeRow(updated.rows[0])
   })
+}
+
+// Reports that a job's worker is still on it.
+export async function touchScanJob(id: string) {
+  await query(`UPDATE scan_jobs SET locked_at = now() WHERE id = $1 AND status = 'running'`, [id])
+}
+
+// Instruments in use whose stored prices are oldest, with how far back each one's calls go.
+export async function getStaleSeries({ olderThanMinutes, limit }: { olderThanMinutes: number; limit: number }) {
+  const { rows } = await query(
+    `SELECT c.asset_class, c.source_id, MIN(c.first_pitch_at) AS since
+     FROM calls c
+     LEFT JOIN price_series p ON p.series = c.asset_class || ':' || c.source_id AND p.interval = '1d'
+     WHERE p.fetched_at IS NULL OR p.fetched_at < now() - ($1::int * interval '1 minute')
+     GROUP BY c.asset_class, c.source_id, p.fetched_at
+     ORDER BY p.fetched_at NULLS FIRST
+     LIMIT $2`,
+    [olderThanMinutes, limit],
+  )
+  return rows.map(serializeRow)
 }
 
 export async function getScanJob(id: string) {

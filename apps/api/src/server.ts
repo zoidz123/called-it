@@ -13,11 +13,13 @@ import {
   getScanJob,
   getUserScorecard,
   hasScorecard,
+  candidateStore,
+  priceStore,
   listInstruments,
   maybeEnqueueStaleRefreshes,
   saveFeedSummary,
 } from '@called-it/db'
-import { dayKey, directionalReturn, getDailyBars, getLiveMids, getXUser, liveQuote, loadLocalEnv, mapWithConcurrency, parseXHandle, summariesAreConfigured, summarizeIdea, type Bar, type SummaryPost } from '@called-it/core'
+import { dayKey, directionalReturn, getDailyBars, getLiveMids, getXUser, liveQuote, loadLocalEnv, mapWithConcurrency, parseXHandle, summariesAreConfigured, summarizeIdea, useCandidateStore, usePriceStore, type Bar, type SummaryPost } from '@called-it/core'
 import { startPollLoop } from './poller'
 import { describeRegistry, startWorkerLoop } from './worker'
 import { corsOrigin, scanIsConfigured, visitorAddress } from './config'
@@ -46,6 +48,9 @@ const feedbackBuckets = new Map<string, { count: number; resetAt: number; finger
 
 export async function buildServer() {
   await migrate()
+  // Price histories and ticker searches are kept in the database and shared across accounts and restarts.
+  usePriceStore(priceStore)
+  useCandidateStore(candidateStore)
   const app = Fastify({ logger: true })
   await app.register(cors, { origin: corsOrigin() })
 

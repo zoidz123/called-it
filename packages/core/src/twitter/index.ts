@@ -347,7 +347,9 @@ async function callTwitterApi(path: string, params: Record<string, string | unde
   const url = new URL(path, BASE)
   for (const [key, value] of Object.entries(params)) if (value) url.searchParams.set(key, value)
   let lastError: Error | undefined
-  for (let attempt = 0; attempt < Math.max(3, scheduler.keyCount); attempt += 1) {
+  // Enough tries to pass over every key that is out of credits and still retry a key that was only rate limited:
+  // with one funded key, a single busy answer would otherwise end the request on the empty keys' error.
+  for (let attempt = 0; attempt < scheduler.keyCount + 3; attempt += 1) {
     const reservation = await scheduler.reserve()
     const startedAt = Date.now()
     inFlightTwitterRequests += 1

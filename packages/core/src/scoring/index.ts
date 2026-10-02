@@ -1,5 +1,5 @@
 import { resolveAssets, type AssetContext, type TickerRegistry } from '../assets'
-import { getPriceSeries, pricesAt, type PriceSeries } from '../pricing'
+import { getPriceSeries, hasFreshSeries, isOnchainSource, pricesAt, type PriceSeries } from '../pricing'
 import type { ClassifiedTweet, Direction, HorizonStats, ResolvedAsset, ScoredCall, ScoredCallout, UserStats } from '../types'
 
 export async function scoreCalls(
@@ -16,12 +16,20 @@ export async function scoreCalls(
     settled?: Map<string, SettledCallout>
     // What the registry already knows about tickers, looked up only for the ones that need resolving.
     registryFor?: (assets: string[]) => Promise<TickerRegistry>
+    // Scores only these assets.
+    only?: string[]
+    // Leaves out on-chain tokens whose prices are not already in the store. Their venue is slow and rate limited,
+    // so they are returned in `deferred` for the caller to score afterwards.
+    deferSlow?: boolean
+    onProgress?: (done: number, total: number) => void
   } = {},
-  // `instruments` are the ones resolved on this run, for the caller to record.
-): Promise<{ calls: ScoredCall[]; stats: UserStats; instruments: ResolvedAsset[] }> {
+  // `instruments` are the ones resolved on this run, for the caller to record, and `resolved` is every instrument
+  // the run scored against.
+): Promise<{ calls: ScoredCall[]; stats: UserStats; instruments: ResolvedAsset[]; resolved: Map<string, ResolvedAsset>; deferred: string[] }> {
   const maxAssets = Number(process.env.SCORING_MAX_ASSETS ?? 0)
   const assetsAll = [...new Set(classifiedTweets.flatMap((tweet) => tweet.stances.map((stance) => stance.asset)))]
-  const assets = maxAssets > 0 ? assetsAll.slice(0, maxAssets) : assetsAll
+  const wanted = options.only ? assetsAll.filter((asset) => options.only?.includes(asset)) : assetsAll
+  const assets = maxAssets > 0 ? wanted.slice(0, maxAssets) : wanted
   const resolved = new Map(options.resolved)
   const instruments: ResolvedAsset[] = []
   if (!options.resolved || options.resolveMissing) {
@@ -35,13 +43,24 @@ export async function scoreCalls(
     for (const [asset, instrument] of found) resolved.set(asset, instrument)
     instruments.push(...found.values())
   }
-  const callGroups = await mapWithConcurrency(assets, Number(process.env.PRICING_CONCURRENCY ?? 6), async (asset) => {
-    return scoreAssetCalls(handle, asset, classifiedTweets, resolved, options.settled)
+  const deferred: string[] = []
+  if (options.deferSlow) {
+    for (const asset of assets) {
+      const instrument = resolved.get(asset)
+      if (instrument && isOnchainSource(instrument.sourceId) && !(await hasFreshSeries(instrument))) deferred.push(asset)
+    }
+  }
+  const now = assets.filter((asset) => !deferred.includes(asset))
+  let done = 0
+  const callGroups = await mapWithConcurrency(now, Number(process.env.PRICING_CONCURRENCY ?? 6), async (asset) => {
+    const scored = await scoreAssetCalls(handle, asset, classifiedTweets, resolved, options.settled)
+    options.onProgress?.(++done, now.length)
+    return scored
   })
   const calls = callGroups.flat()
 
   calls.sort((a, b) => b.returnPct - a.returnPct)
-  return { calls, stats: computeStats(handle, calls), instruments }
+  return { calls, stats: computeStats(handle, calls), instruments, resolved, deferred }
 }
 
 async function scoreAssetCalls(

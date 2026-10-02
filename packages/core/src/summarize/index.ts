@@ -1,3 +1,4 @@
+import { timedFetch } from '../http'
 import { optionalEnv, requiredEnv } from '../env'
 
 export type SummaryPost = { name: string; direction: 'BULL' | 'BEAR'; text: string }
@@ -45,11 +46,11 @@ export async function summarizeIdea(
     messages: [{ role: 'user', content: summaryPrompt(asset, posts) }],
   })
   for (let attempt = 1; ; attempt++) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await timedFetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body,
-    })
+    }, 60_000)
     if ((res.status === 429 || res.status === 529) && attempt < MAX_ATTEMPTS) {
       const retryAfter = Number(res.headers.get('retry-after'))
       await new Promise((done) => setTimeout(done, retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt))

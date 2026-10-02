@@ -3,22 +3,22 @@ import {
   classifyCandidates,
   filterIgnoredCashtags,
   getPostsSince,
-  scoreCalls,
+  getPriceSeries,
+  mapWithConcurrency,
   type Tweet,
   type XUser,
 } from '@called-it/core'
 import {
   createOrReuseScanJob,
+  getStaleSeries,
   getStoredClassifiedTweets,
-  getTickerRegistry,
   getTrackedAccounts,
   hasRecentRefreshJob,
   markScanned,
   persistScorecard,
   queueStaleRescores,
-  recordInstruments,
 } from '@called-it/db'
-import { scoringState } from './worker'
+import { scoreAccount } from './worker'
 
 const POLL_MINUTES = Number(process.env.FEED_POLL_MINUTES ?? 15)
 // X's search can list a post a little after it was written, so each read reaches back past the last one.
@@ -30,6 +30,12 @@ const SEEN_TTL_MS = 60 * 60 * 1000
 // Every account is rescored at least this often, a few each read so they do not all price at once.
 const RESCORE_AFTER_HOURS = 24
 const RESCORES_PER_READ = 10
+// Stored prices older than this are brought up to date in the background, a batch each read, so a scan or a
+// rescore finds most of what it needs already there.
+const PRICES_STALE_MINUTES = 180
+const PRICES_PER_READ = 60
+const PRICE_REFRESH_CONCURRENCY = 4
+let refreshingPrices = false
 
 type Tracked = { user: XUser; lastScannedAt: string }
 
@@ -46,6 +52,7 @@ export function startPollLoop({ minutes = POLL_MINUTES } = {}) {
       // Rescoring needs no provider credits, so it runs even when reading new posts fails.
       const rescoring = await queueStaleRescores({ afterHours: RESCORE_AFTER_HOURS, limit: RESCORES_PER_READ })
       if (rescoring.length) console.log(`[feed-poll] rescoring=${rescoring.length}`)
+      void refreshStalePrices()
       await pollOnce()
     } catch (error) {
       console.error('feed poll failed', error)
@@ -106,6 +113,23 @@ export function postsReadFor<T extends { id: string }>(handle: string, posts: Ma
   return posts.get(key) ?? []
 }
 
+// Brings the oldest stored price histories up to date. It runs beside the read of new posts and never holds it up.
+async function refreshStalePrices() {
+  if (refreshingPrices) return
+  refreshingPrices = true
+  try {
+    const stale = await getStaleSeries({ olderThanMinutes: PRICES_STALE_MINUTES, limit: PRICES_PER_READ })
+    await mapWithConcurrency(stale, PRICE_REFRESH_CONCURRENCY, (row: any) => (
+      getPriceSeries({ symbol: row.source_id, assetClass: row.asset_class, sourceId: row.source_id, name: null }, row.since)
+    ))
+    if (stale.length) console.log(`[feed-poll] prices refreshed=${stale.length}`)
+  } catch (error) {
+    console.error('refreshing stored prices failed', error)
+  } finally {
+    refreshingPrices = false
+  }
+}
+
 export function splitByGap(accounts: Tracked[], now: number) {
   const fresh = accounts.filter((account) => now - Date.parse(account.lastScannedAt) <= MAX_GAP_MS)
   return { fresh, stale: accounts.filter((account) => !fresh.includes(account)) }
@@ -120,9 +144,8 @@ async function ingest(user: XUser, tweets: Tweet[]) {
   const storedIds = new Set(stored.map((tweet) => tweet.id))
   const classified = filterIgnoredCashtags(user.handle, await classifyCandidates(candidates.filter((tweet) => !storedIds.has(tweet.id))))
   if (!classified.length) return 0
-  const { resolved, settled } = await scoringState(user.handle)
-  const { calls, instruments } = await scoreCalls(user.handle, [...stored, ...classified], { resolved, resolveMissing: true, settled, registryFor: getTickerRegistry })
-  await recordInstruments(instruments)
+  const { calls, finish } = await scoreAccount(user.handle, [...stored, ...classified], { resolveMissing: true })
   await persistScorecard({ user, classifiedTweets: classified, calls })
+  finish?.().catch((error) => console.error(`pricing tokens failed for @${user.handle}`, error))
   return classified.length
 }
